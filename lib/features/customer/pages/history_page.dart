@@ -529,6 +529,9 @@ class _HistoryPageState extends State<HistoryPage>
       },
     );
   }
+<<<<<<< HEAD:lib/features/customer/pages/history_page.dart
+}
+=======
 }
 
 // import 'package:flutter/material.dart';
@@ -1024,3 +1027,4 @@ class _HistoryPageState extends State<HistoryPage>
 //     );
 //   }
 // }
+>>>>>>> 4fe63f4c598d313e52a713346bff71e89b54eb91:lib/screens/history_page.dart

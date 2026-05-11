@@ -1,14 +1,19 @@
+import 'package:barber_app/core/config/api.dart';
+import 'package:barber_app/core/services/booking_service.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io';
+<<<<<<< HEAD:lib/features/customer/pages/booking_page.dart
+=======
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 // 🔥 SESUAIKAN DENGAN STRUKTUR FOLDER KAMU
 import '../config/api.dart';
 import 'history_page.dart';
+>>>>>>> 4fe63f4c598d313e52a713346bff71e89b54eb91:lib/screens/booking_page.dart
 
 class BookingPage extends StatefulWidget {
   final Map<String, dynamic> shopData;
@@ -780,4 +785,200 @@ class _BookingPageState extends State<BookingPage> {
       ),
     );
   }
+<<<<<<< HEAD:lib/features/customer/pages/booking_page.dart
+
+  // Widget khusus untuk Kapster agar layoutnya menyamping rapi
+  Widget _buildBarberCard(Map<String, dynamic> barber) {
+    bool isSelected = selectedBarber == barber;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          selectedBarber = barber;
+          _fetchTimeSlots();
+        });
+      },
+      child: Container(
+        width: 100,
+        margin: const EdgeInsets.only(right: 12),
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? Colors.amber.withOpacity(0.1)
+              : const Color(0xFF1A1A1A),
+          border: Border.all(color: isSelected ? Colors.amber : Colors.white10),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            CircleAvatar(
+              radius: 25,
+              backgroundColor: isSelected
+                  ? Colors.amber
+                  : const Color(0xFF2A2A2A),
+              child: Icon(
+                Icons.person,
+                color: isSelected ? Colors.black : Colors.grey,
+                size: 30,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              barber['name'],
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: isSelected ? Colors.amber : Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAddonCard(Map<String, dynamic> addon) {
+    bool isSelected = selectedAddons.contains(addon);
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          if (isSelected) {
+            selectedAddons.remove(addon);
+          } else {
+            selectedAddons.add(addon);
+          }
+        });
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(15),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1A1A),
+          border: Border.all(
+            color: isSelected ? Colors.white30 : Colors.transparent,
+          ),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  addon['name'].toString().toUpperCase(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  "+ Rp ${addon['price']}",
+                  style: const TextStyle(
+                    color: Colors.greenAccent,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            Icon(
+              isSelected ? Icons.check_circle : Icons.add_circle_outline,
+              color: isSelected ? Colors.amber : Colors.grey,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCustomPhotoCard() {
+    bool isSelected = customPhoto != null;
+    return GestureDetector(
+      onTap: _pickImage,
+      child: Container(
+        width: 130,
+        margin: const EdgeInsets.only(right: 15),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1A1A),
+          border: Border.all(
+            color: isSelected ? Colors.amber : Colors.white10,
+            width: 2,
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              customPhoto != null
+                  ? Image.file(customPhoto!, fit: BoxFit.cover)
+                  : const Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.add_a_photo, color: Colors.amber, size: 35),
+                        SizedBox(height: 10),
+                        Text(
+                          "UPLOAD\nFOTOMU",
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+              if (isSelected)
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.black.withOpacity(0.9),
+                        Colors.transparent,
+                      ],
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.center,
+                    ),
+                  ),
+                ),
+              if (isSelected)
+                const Positioned(
+                  bottom: 12,
+                  left: 10,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "DIPILIH",
+                        style: TextStyle(
+                          color: Colors.amber,
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                      Text(
+                        "CUSTOM FOTO",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
+=======
+}
+>>>>>>> 4fe63f4c598d313e52a713346bff71e89b54eb91:lib/screens/booking_page.dart

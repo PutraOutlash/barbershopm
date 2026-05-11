@@ -2,11 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+<<<<<<< HEAD:lib/features/auth/pages/login_page.dart
+import '../../../core/config/api.dart';
+import '../../../core/models/user_model.dart';
+import 'register_page.dart'; // Sesuaikan path ini dengan letak file register_page.dart kamu
+import '../../customer/pages/main_page.dart';
+import '../../barber/pages/home_page.dart';
+=======
 import '../config/api.dart';
 import '../models/user_model.dart';
 import 'register_page.dart';
 import 'main_page.dart';
 import 'forgot_password_page.dart';
+>>>>>>> 4fe63f4c598d313e52a713346bff71e89b54eb91:lib/screens/login_page.dart
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -65,8 +73,16 @@ class _LoginPageState extends State<LoginPage> {
     try {
       // 2. Tembak API Login Laravel
       var response = await http.post(
+<<<<<<< HEAD:lib/features/auth/pages/login_page.dart
+        Uri.parse("${Api.baseUrl}/api/login"), // ✅ FIX
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+=======
         Uri.parse("${Api.baseUrl}/login"),
         headers: {"Accept": "application/json"},
+>>>>>>> 4fe63f4c598d313e52a713346bff71e89b54eb91:lib/screens/login_page.dart
         body: {
           "login": emailController
               .text, // Backend bisa baca ini sebagai username atau email
@@ -79,6 +95,41 @@ class _LoginPageState extends State<LoginPage> {
 
       // 3. Cek apakah Login Berhasil
       if (response.statusCode == 200 && result['token'] != null) {
+<<<<<<< HEAD:lib/features/auth/pages/login_page.dart
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+
+      await prefs.setString("token", result['token']);
+
+      UserModel userYangLogin = UserModel.fromJson(result['user']);
+
+      await prefs.setString("user_name", userYangLogin.name);
+      await prefs.setString("user_role", userYangLogin.role ?? 'customer');
+      await prefs.setBool("is_logged_in", true);
+
+      _showSnackBar("Welcome back, ${userYangLogin.name}!", Colors.green);
+
+      // 🔥 TAMBAHAN PENTING
+      String role = userYangLogin.role ?? 'customer';
+
+    if (mounted) {
+      if (role == 'barber') {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const HomePage(), // 👈 barber
+          ),
+        );
+      } else {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const MainPage(), // 👈 customer
+          ),
+        );
+      }
+    }
+  } else {
+=======
         // 4. TANGKAP DAN SIMPAN TOKEN & DATA USER
         SharedPreferences prefs = await SharedPreferences.getInstance();
 
@@ -111,8 +162,9 @@ class _LoginPageState extends State<LoginPage> {
           );
         }
       } else {
+>>>>>>> 4fe63f4c598d313e52a713346bff71e89b54eb91:lib/screens/login_page.dart
         _showSnackBar(
-          result['message'] ?? "Email atau Password salah!",
+          result['message'] ?? "Login failed. Please check your credentials.",
           Colors.redAccent,
         );
       }

@@ -1,0 +1,12 @@
+class Api {
+  // Gunakan ini jika kamu ngetesnya (Run) di Web browser (Chrome)
+  // static const String baseUrl = "http://127.0.0.1:8000/api";
+<<<<<<< HEAD:lib/core/config/api.dart
+  //static const String baseUrl = "http://192.168.119.245:8000/api";
+=======
+  static const String baseUrl = "http://192.168.73.245:8000/api";
+>>>>>>> 4fe63f4c598d313e52a713346bff71e89b54eb91:lib/config/api.dart
+  // CATATAN: Kalau besok presentasi pakai Emulator Android, ganti jadi:
+  //static const String baseUrl = "http://10.0.2.2:8000/api";
+  static const String baseUrl = "http://10.10.180.222:8000";
+}

@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import '../config/api.dart';
+import '../../../core/config/api.dart';
 
 class AuthService {
   // 🔥 FUNGSI LOGIN (Bisa pakai Username atau Email)
@@ -11,9 +11,15 @@ class AuthService {
   ) async {
     try {
       var res = await http.post(
-        Uri.parse("${Api.baseUrl}/auth/login.php"),
-        headers: {"Content-Type": "application/x-www-form-urlencoded"},
-        body: {"email": email, "password": password},
+        Uri.parse("${Api.baseUrl}/api/login"),
+        headers: {
+          "Accept": "application/json", // 🔥 WAJIB
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: {
+          "login": email, // karena kamu pakai login (email/username)
+          "password": password,
+        },
       );
 
       print("STATUS: ${res.statusCode}"); // 🔥 DEBUG
@@ -38,26 +44,45 @@ class AuthService {
 
   // 🔥 FUNGSI REGISTER (Dengan tambahan Username)
   static Future<Map<String, dynamic>> register(
-    String username,
-    String email,
-    String password,
-  ) async {
-    try {
-      var res = await http.post(
-        Uri.parse("${Api.baseUrl}/auth/register.php"),
-        body: {"username": username, "email": email, "password": password},
-      );
-      return jsonDecode(res.body);
-    } catch (e) {
-      return {"status": "error", "message": "Gagal terhubung ke server."};
-    }
+  String name,
+  String username,
+  String email,
+  String password,
+) async {
+  try {
+    var res = await http.post(
+      Uri.parse("${Api.baseUrl}/api/register"),
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: {
+        "name": name,
+        "username": username,
+        "email": email,
+        "password": password,
+        "role": "customer",
+      },
+    );
+
+    print(res.statusCode);
+    print(res.body);
+
+    return jsonDecode(res.body);
+  } catch (e) {
+    return {
+      "status": "error",
+      "message": e.toString(),
+    };
   }
+}
 
   // 🔥 FUNGSI KIRIM OTP
   static Future<Map<String, dynamic>> sendOtp(String email) async {
     try {
       var res = await http.post(
-        Uri.parse('${Api.baseUrl}/auth/send_otp.php'),
+        Uri.parse('${Api.baseUrl}/api/send_otp'),
+        headers: {"Content-Type": "application/x-www-form-urlencoded"},
         body: {'email': email},
       );
       return jsonDecode(res.body);
@@ -74,7 +99,8 @@ class AuthService {
   ) async {
     try {
       var res = await http.post(
-        Uri.parse('${Api.baseUrl}/auth/verify_password.php'),
+        Uri.parse('${Api.baseUrl}/api/verify_password'),
+        headers: {"Content-Type": "application/x-www-form-urlencoded"},
         body: {'email': email, 'otp': otp, 'new_password': newPassword},
       );
       return jsonDecode(res.body);

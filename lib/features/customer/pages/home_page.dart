@@ -1,3 +1,4 @@
+import 'package:barber_app/core/services/hairstyle_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
@@ -12,8 +13,12 @@ import '../config/api.dart';
 
 import 'booking_page.dart';
 import 'product_page.dart';
+<<<<<<< HEAD:lib/features/customer/pages/home_page.dart
+import 'explore_page.dart'; // 🔥 Import halaman Eksplor
+=======
 import 'explore_page.dart';
 import '../services/hairstyle_service.dart';
+>>>>>>> 4fe63f4c598d313e52a713346bff71e89b54eb91:lib/screens/home_page.dart
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});

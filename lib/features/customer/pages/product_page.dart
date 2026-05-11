@@ -1,5 +1,5 @@
+import 'package:barber_app/core/services/product_service.dart';
 import 'package:flutter/material.dart';
-import '../services/product_service.dart';
 
 class ProductPage extends StatefulWidget {
   // Menerima data nama toko dari Beranda

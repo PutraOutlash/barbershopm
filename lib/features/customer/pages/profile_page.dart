@@ -4,11 +4,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart'; // 🔥 Untuk buka WA & IG
 import 'dart:io';
+<<<<<<< HEAD:lib/features/customer/pages/profile_page.dart
+import 'dart:async'; // 🔥 Diperlukan untuk Timer Jam Live
+//import 'package:barber_app/features/auth/services/auth_service.dart';
+import 'package:barber_app/features/auth/pages/login_page.dart';
+=======
 import 'dart:async';
 import 'dart:convert';
 import '../config/api.dart';
 import 'login_page.dart';
 import 'forgot_password_page.dart'; // 🔥 Untuk fitur OTP Keamanan
+>>>>>>> 4fe63f4c598d313e52a713346bff71e89b54eb91:lib/screens/profile_page.dart
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});

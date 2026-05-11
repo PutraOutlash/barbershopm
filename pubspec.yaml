@@ -43,8 +43,12 @@ dependencies:
   flutter_map: ^8.3.0
   latlong2: ^0.9.1
   geolocator: ^14.0.2
+<<<<<<< HEAD
+  provider: ^6.1.5+1
+=======
   url_launcher: ^6.3.2
   qr_flutter: ^4.1.0
+>>>>>>> 4fe63f4c598d313e52a713346bff71e89b54eb91
 
 dev_dependencies:
   flutter_test:
