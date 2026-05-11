@@ -4,8 +4,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../config/api.dart';
 import '../models/user_model.dart';
-import 'register_page.dart'; // Sesuaikan path ini dengan letak file register_page.dart kamu
+import 'register_page.dart';
 import 'main_page.dart';
+import 'forgot_password_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -28,11 +29,34 @@ class _LoginPageState extends State<LoginPage> {
   bool isPasswordVisible = false;
   bool isLoading = false;
 
+  // 🔥 Variabel untuk Remember Me
+  bool _rememberMe = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Panggil memori saat halaman pertama kali dibuka
+    _loadSavedCredentials();
+  }
+
+  // --- LOGIKA REMEMBER ME (BACA MEMORI) ---
+  Future<void> _loadSavedCredentials() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    setState(() {
+      emailController.text = prefs.getString('saved_login') ?? '';
+      passwordController.text = prefs.getString('saved_password') ?? '';
+      _rememberMe = prefs.getBool('remember_me') ?? false;
+    });
+  }
+
   // --- LOGIKA LOGIN KE LARAVEL ---
   Future<void> login() async {
     // 1. Validasi input kosong
     if (emailController.text.isEmpty || passwordController.text.isEmpty) {
-      _showSnackBar("Email dan Password wajib diisi!", Colors.redAccent);
+      _showSnackBar(
+        "Username/Email dan Password wajib diisi!",
+        Colors.redAccent,
+      );
       return;
     }
 
@@ -42,12 +66,10 @@ class _LoginPageState extends State<LoginPage> {
       // 2. Tembak API Login Laravel
       var response = await http.post(
         Uri.parse("${Api.baseUrl}/login"),
-        headers: {
-          "Accept":
-              "application/json", // Wajib agar Laravel merespons dengan JSON
-        },
+        headers: {"Accept": "application/json"},
         body: {
-          "login": emailController.text,
+          "login": emailController
+              .text, // Backend bisa baca ini sebagai username atau email
           "password": passwordController.text,
         },
       );
@@ -55,23 +77,29 @@ class _LoginPageState extends State<LoginPage> {
       var result = jsonDecode(response.body);
       setState(() => isLoading = false);
 
-      // 3. Cek apakah Login Berhasil (Laravel biasanya mengirimkan 'token')
+      // 3. Cek apakah Login Berhasil
       if (response.statusCode == 200 && result['token'] != null) {
-        // 4. TANGKAP DAN SIMPAN TOKEN & DATA USER KE MEMORI HP
+        // 4. TANGKAP DAN SIMPAN TOKEN & DATA USER
         SharedPreferences prefs = await SharedPreferences.getInstance();
 
-        // Simpan Token Sanctum (SANGAT PENTING untuk akses fitur lain)
         await prefs.setString("token", result['token']);
 
-        // Mengubah JSON User dari Laravel menjadi Objek Dart
         UserModel userYangLogin = UserModel.fromJson(result['user']);
 
-        // Simpan data profil penting untuk Beranda/Profile
         await prefs.setString("user_name", userYangLogin.name);
         await prefs.setString("user_role", userYangLogin.role ?? 'customer');
-
-        // Ganti status login (Fitur Remember Me)
         await prefs.setBool("is_logged_in", true);
+
+        // 🔥 LOGIKA REMEMBER ME (SIMPAN/HAPUS MEMORI)
+        if (_rememberMe) {
+          await prefs.setString('saved_login', emailController.text);
+          await prefs.setString('saved_password', passwordController.text);
+          await prefs.setBool('remember_me', true);
+        } else {
+          await prefs.remove('saved_login');
+          await prefs.remove('saved_password');
+          await prefs.setBool('remember_me', false);
+        }
 
         _showSnackBar("Welcome back, ${userYangLogin.name}!", Colors.green);
 
@@ -79,13 +107,10 @@ class _LoginPageState extends State<LoginPage> {
         if (mounted) {
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(
-              builder: (context) => const MainPage(),
-            ), // 🔥 Ubah jadi ini
+            MaterialPageRoute(builder: (context) => const MainPage()),
           );
         }
       } else {
-        // Jika password salah atau user tidak ditemukan
         _showSnackBar(
           result['message'] ?? "Email atau Password salah!",
           Colors.redAccent,
@@ -102,7 +127,10 @@ class _LoginPageState extends State<LoginPage> {
       SnackBar(
         content: Text(
           message,
-          style: const TextStyle(fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
         ),
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,
@@ -151,8 +179,10 @@ class _LoginPageState extends State<LoginPage> {
               // FORM INPUT
               _buildTextField(
                 controller: emailController,
-                hintText: "Email Address",
-                icon: Icons.email_outlined,
+                hintText:
+                    "Username atau Email", // 🔥 Disesuaikan agar user tahu bisa pakai keduanya
+                icon: Icons
+                    .person_outline, // Diganti jadi ikon person agar lebih universal
                 keyboardType: TextInputType.emailAddress,
               ),
               const SizedBox(height: 20),
@@ -168,16 +198,67 @@ class _LoginPageState extends State<LoginPage> {
               ),
               const SizedBox(height: 15),
 
-              // LUPA PASSWORD (Opsional/Bisa diklik jika nanti ada fiturnya)
-              Align(
-                alignment: Alignment.centerRight,
-                child: Text(
-                  "Forgot Password?",
-                  style: TextStyle(
-                    color: subtleText.withOpacity(0.8),
-                    fontSize: 13,
+              // 🔥 BARIS REMEMBER ME & FORGOT PASSWORD
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Checkbox Remember Me
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: Theme(
+                          data: ThemeData(unselectedWidgetColor: subtleText),
+                          child: Checkbox(
+                            value: _rememberMe,
+                            checkColor: darkBackground,
+                            activeColor: goldAccent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            onChanged: (value) {
+                              setState(() {
+                                _rememberMe = value ?? false;
+                              });
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        "Remember Me",
+                        style: TextStyle(color: subtleText, fontSize: 13),
+                      ),
+                    ],
                   ),
-                ),
+
+                  // Tombol Forgot Password
+                  TextButton(
+                    onPressed: () {
+                      // 🔥 Gembok dibuka, sekarang mengarah ke halaman Forgot Password
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ForgotPasswordPage(),
+                        ),
+                      );
+                    },
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(50, 30),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text(
+                      "Forgot Password?",
+                      style: TextStyle(
+                        color: goldAccent,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 40),
 
@@ -251,7 +332,7 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  // --- WIDGET BANTUAN UNTUK TEXTFIELD (BIAR RAPI & AESTHETIC) ---
+  // --- WIDGET BANTUAN UNTUK TEXTFIELD ---
   Widget _buildTextField({
     required TextEditingController controller,
     required String hintText,

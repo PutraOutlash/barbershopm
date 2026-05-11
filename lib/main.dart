@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:barber_app/screens/login_page.dart'; // Import halaman login
+import 'screens/test_model_page.dart';
 
 // PINTU MASUK UTAMA FLUTTER
 void main() {
@@ -16,6 +17,7 @@ class MyApp extends StatelessWidget {
       title: 'Barber App',
       // Setelah aplikasi buka, arahkan langsung ke halaman Login
       home: const LoginPage(),
+      // home: const TestModelPage(), //hanya buat test
     );
   }
 }

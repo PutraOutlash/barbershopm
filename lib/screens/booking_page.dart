@@ -3,40 +3,36 @@ import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+// 🔥 SESUAIKAN DENGAN STRUKTUR FOLDER KAMU
 import '../config/api.dart';
-import '../services/booking_service.dart';
+import 'history_page.dart';
 
 class BookingPage extends StatefulWidget {
-  const BookingPage({super.key});
+  final Map<String, dynamic> shopData;
+
+  const BookingPage({super.key, required this.shopData});
 
   @override
   State<BookingPage> createState() => _BookingPageState();
 }
 
 class _BookingPageState extends State<BookingPage> {
-  // --- STATE VARIABLES ---
   List services = [];
-  List barbers = [];
-  List addons = [];
-  List hairstyles = [];
   List timeSlots = [];
 
   Map<String, dynamic>? selectedService;
-  Map<String, dynamic>? selectedBarber;
-  Map<String, dynamic>? selectedHairstyle;
-  List<Map<String, dynamic>> selectedAddons = [];
-
-  DateTime selectedDate = DateTime.now(); // Default ke hari ini
+  DateTime selectedDate = DateTime.now();
   String? selectedTime;
   File? customPhoto;
 
   bool isLoadingData = true;
   bool isSubmitting = false;
 
-  // Daftar 14 Hari ke depan untuk kalender horizontal
   late List<DateTime> upcomingDates;
 
-  // Format Hari & Bulan Bahasa Indonesia
   final List<String> _namaHari = [
     '',
     'SEN',
@@ -66,7 +62,6 @@ class _BookingPageState extends State<BookingPage> {
   @override
   void initState() {
     super.initState();
-    // Generate 14 hari ke depan mulai dari hari ini
     upcomingDates = List.generate(
       14,
       (index) => DateTime.now().add(Duration(days: index)),
@@ -74,168 +69,312 @@ class _BookingPageState extends State<BookingPage> {
     _fetchAllData();
   }
 
-  // --- API FETCHERS ---
-  Future<void> _fetchAllData() async {
-    try {
-      var resServ = await http.get(Uri.parse("${Api.baseUrl}/service/get.php"));
-      var resBarb = await http.get(
-        Uri.parse("${Api.baseUrl}/booking/barbers.php"),
-      );
-      var resAdd = await http.get(Uri.parse("${Api.baseUrl}/addon/get.php"));
-      var resHair = await http.get(
-        Uri.parse("${Api.baseUrl}/hairstyle/get.php"),
-      );
+  Future<void> _pickTime(BuildContext context) async {
+    if (selectedDate == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Pilih tanggal dulu ya!")));
+      return;
+    }
 
-      if (mounted) {
-        setState(() {
-          services = jsonDecode(resServ.body);
-          barbers = jsonDecode(resBarb.body);
-          addons = jsonDecode(resAdd.body);
-          hairstyles = jsonDecode(resHair.body);
-          isLoadingData = false;
-        });
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+      builder: (context, child) {
+        return MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(alwaysUse24HourFormat: true), // Format 24 jam
+          child: Theme(
+            data: Theme.of(context).copyWith(
+              colorScheme: const ColorScheme.dark(
+                primary: Colors.amber, // Warna jarum jam
+                onPrimary: Colors.black,
+                surface: Color(0xFF1A1A1A),
+                onSurface: Colors.white,
+              ),
+            ),
+            child: child!,
+          ),
+        );
+      },
+    );
+
+    if (picked != null) {
+      DateTime now = DateTime.now();
+
+      // 🔥 VALIDASI: Cek jika pilih jam yang sudah lewat di hari yang sama
+      if (selectedDate!.year == now.year &&
+          selectedDate!.month == now.month &&
+          selectedDate!.day == now.day) {
+        if (picked.hour < now.hour ||
+            (picked.hour == now.hour && picked.minute < now.minute)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Waduh, jam tersebut sudah lewat!"),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+          return;
+        }
+      }
+
+      setState(() {
+        // Simpan dalam format HH:mm untuk dikirim ke Laravel
+        selectedTime =
+            "${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}";
+      });
+    }
+  }
+
+  Future<void> _fetchAllData() async {
+    String clickedShopName = widget.shopData['shop_name']
+        .toString()
+        .toLowerCase();
+
+    try {
+      var resServ = await http
+          .get(Uri.parse("${Api.baseUrl}/services"))
+          .timeout(const Duration(seconds: 5));
+
+      if (resServ.statusCode == 200) {
+        List allServices = jsonDecode(resServ.body);
+
+        if (mounted) {
+          setState(() {
+            // Memfilter layanan yang tersedia di toko yang diklik
+            services = allServices
+                .where(
+                  (s) =>
+                      (s['shop_name'] ?? '').toString().toLowerCase() ==
+                      clickedShopName,
+                )
+                .toList();
+
+            // Fallback jika API belum mengirim shop_name
+            if (services.isEmpty) {
+              services = allServices
+                  .where((s) => s['barber_id'] == widget.shopData['user_id'])
+                  .toList();
+            }
+
+            isLoadingData = false;
+          });
+        }
       }
     } catch (e) {
-      print("Error fetching data: $e");
-      // Fallback jika API mati agar layar tidak terus loading
       if (mounted) {
         setState(() => isLoadingData = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Gagal menarik data dari server."),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
 
   Future<void> _fetchTimeSlots() async {
-    if (selectedBarber == null || selectedService == null) return;
-    setState(() => timeSlots = []);
+    // 🔥 Pengecekan kapster dihapus, jam langsung muncul setelah milih layanan
+    if (selectedService == null) return;
 
-    int totalDuration = int.parse(selectedService!['duration'].toString());
-    String dateStr =
-        "${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}";
-
+    setState(() {
+      timeSlots = [];
+      selectedTime = null;
+    });
     try {
-      var res = await http.get(
-        Uri.parse(
-          "${Api.baseUrl}/booking/slots.php?date=$dateStr&barber_id=${selectedBarber!['id']}&duration=$totalDuration",
-        ),
-      );
-
-      if (mounted) {
-        setState(() {
-          timeSlots = jsonDecode(res.body);
-          selectedTime = null;
-        });
+      var res = await http
+          .get(Uri.parse("${Api.baseUrl}/slots"))
+          .timeout(const Duration(seconds: 5));
+      if (res.statusCode == 200) {
+        setState(() => timeSlots = jsonDecode(res.body));
       }
     } catch (e) {
-      print("Error fetching slots: $e");
+      debugPrint("Error slots: $e");
     }
   }
 
-  // --- LOGIC HELPERS ---
   Future<void> _pickImage() async {
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-    if (image != null) {
-      setState(() {
-        customPhoto = File(image.path);
-        selectedHairstyle = null;
-      });
-    }
+    if (image != null) setState(() => customPhoto = File(image.path));
   }
 
   int _calculateTotal() {
-    int total = 0;
-    if (selectedService != null) {
-      total += int.parse(selectedService!['price'].toString());
-    }
-    for (var addon in selectedAddons) {
-      total += int.parse(addon['price'].toString());
-    }
-    return total;
+    if (selectedService != null)
+      return int.parse(
+        selectedService!['price']
+            .toString()
+            .replaceAll('.00', '')
+            .split('.')[0],
+      );
+    return 0;
+  }
+
+  // Fungsi menghitung perkiraan jam selesai berdasarkan durasi layanan
+  String _calculateEndTime() {
+    if (selectedTime == null || selectedService == null) return "--:--";
+
+    // Ambil durasi dari API, default 30 menit jika kosong
+    int durationMinutes = selectedService!['duration'] ?? 30;
+
+    // Pecah jam yang dipilih (misal "09:00" dipisah jadi 9 dan 0)
+    List<String> timeParts = selectedTime!.split(':');
+    int hours = int.parse(timeParts[0]);
+    int minutes = int.parse(timeParts[1]);
+
+    // Gunakan fungsi DateTime Dart untuk menjumlahkan waktu dengan mudah
+    DateTime startTime = DateTime(2024, 1, 1, hours, minutes);
+    DateTime endTime = startTime.add(Duration(minutes: durationMinutes));
+
+    // Format kembali menjadi teks "HH:mm"
+    String endHour = endTime.hour.toString().padLeft(2, '0');
+    String endMinute = endTime.minute.toString().padLeft(2, '0');
+
+    return "$endHour:$endMinute";
   }
 
   Future<void> _submitBooking() async {
+    // 1. Validasi
     if (selectedService == null ||
-        selectedBarber == null ||
+        selectedDate == null ||
         selectedTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Pilih Layanan, Barber, dan Jam!"),
-          backgroundColor: Colors.red,
+          content: Text(
+            "Mohon lengkapi layanan, tanggal, dan jam!",
+            style: TextStyle(color: Colors.white),
+          ),
+          backgroundColor: Colors.redAccent,
         ),
       );
       return;
     }
 
     setState(() => isSubmitting = true);
-    String dateStr =
-        "${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}";
-    int totalDuration = int.parse(selectedService!['duration'].toString());
-    DateTime startTime = DateTime.parse("2026-01-01 $selectedTime");
-    DateTime endTime = startTime.add(Duration(minutes: totalDuration));
-    String endStr =
-        "${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}:00";
 
-    var result = await BookingService.createBooking(
-      userId: "1",
-      serviceId: selectedService!['id'].toString(),
-      barberId: selectedBarber!['id'].toString(),
-      hairstyleId: selectedHairstyle?['id']?.toString(),
-      imageFile: customPhoto,
-      date: dateStr,
-      startTime: selectedTime!,
-      endTime: endStr,
-      totalPrice: _calculateTotal().toString(),
-    );
+    try {
+      // 2. Ambil Token
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString("token");
 
-    setState(() => isSubmitting = false);
+      if (token == null)
+        throw Exception("Kamu belum login! Silakan login terlebih dahulu.");
 
-    if (result['status'] == 'success') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Booking Berhasil!"),
-          backgroundColor: Colors.green,
-        ),
+      // 3. Format Data
+      String formattedDate =
+          "${selectedDate!.year}-${selectedDate!.month.toString().padLeft(2, '0')}-${selectedDate!.day.toString().padLeft(2, '0')}";
+      String formattedTime = selectedTime!.length > 5
+          ? selectedTime!.substring(0, 5)
+          : selectedTime!;
+
+      Map<String, String> requestBody = {
+        "barber_id": widget.shopData['user_id'].toString(),
+        "service_id": selectedService!['id'].toString(),
+        "booking_date": formattedDate,
+        "booking_time": formattedTime,
+        "notes": "Booking via Barber Mobile App",
+      };
+
+      // 4. Tembak API
+      var response = await http.post(
+        Uri.parse("${Api.baseUrl}/book"),
+        headers: {
+          "Accept": "application/json",
+          "Authorization": "Bearer $token",
+        },
+        body: requestBody,
       );
-      Navigator.pop(context);
-    } else {
+
+      setState(() => isSubmitting = false);
+      var result = jsonDecode(response.body);
+
+      // 5. Eksekusi Hasil (Kode yang kamu tanyakan)
+      // 5. Cek Hasil dari Laravel
+      if (response.statusCode == 201) {
+        // Ambil token secara aman (kasih tanda tanya (?) agar tidak error kalau kosong)
+        String? snapToken = result['snap_token'];
+
+        // SKENARIO A: Kalau ada Token (Alur Bayar Langsung Midtrans)
+        if (snapToken != null && snapToken.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                "Pesanan berhasil! Mengalihkan ke pembayaran...",
+                style: TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              backgroundColor: Colors.amber,
+            ),
+          );
+
+          final Uri paymentUrl = Uri.parse(
+            "https://app.sandbox.midtrans.com/snap/v2/vtweb/$snapToken",
+          );
+          if (await canLaunchUrl(paymentUrl)) {
+            await launchUrl(paymentUrl, mode: LaunchMode.externalApplication);
+            if (mounted) Navigator.pop(context); // Kembali ke beranda
+          } else {
+            throw Exception("Gagal membuka halaman pembayaran.");
+          }
+        }
+        // SKENARIO B: Kalau TIDAK ada Token (Alur Tunggu ACC Barber)
+        else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                result['message'] ??
+                    "Pesanan terkirim! Menunggu konfirmasi Barber.",
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              backgroundColor: Colors.amber,
+            ),
+          );
+          if (mounted) Navigator.pop(context); // Langsung kembali ke beranda
+        }
+      } else {
+        // Tampilkan Error Asli dari Laravel
+        throw Exception("Error: ${result['error'] ?? result['message']}");
+      }
+    } catch (e) {
+      // Jika internet putus atau error lainnya
+      setState(() => isSubmitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("Gagal: ${result['message']}"),
-          backgroundColor: Colors.red,
+          content: Text(e.toString()),
+          backgroundColor: Colors.redAccent,
         ),
       );
     }
   }
 
-  // --- UI BUILDERS ---
   @override
   Widget build(BuildContext context) {
-    if (isLoadingData) {
+    if (isLoadingData)
       return const Scaffold(
         backgroundColor: Color(0xFF121212),
         body: Center(child: CircularProgressIndicator(color: Colors.amber)),
       );
-    }
 
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
-      // 🔥 AppBar bawaan DIHAPUS, diganti dengan Stack gambar di body
       body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ==========================================
-            // 1. HEADER: FOTO TOKO & INFO (Konsep Jalan Tengah)
-            // ==========================================
             Stack(
               children: [
-                // Gambar Banner Toko
                 Container(
                   height: 280,
                   width: double.infinity,
                   decoration: const BoxDecoration(
                     image: DecorationImage(
-                      // Menggunakan gambar dummy barbershop premium
                       image: NetworkImage(
                         "https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=800&q=80",
                       ),
@@ -243,7 +382,6 @@ class _BookingPageState extends State<BookingPage> {
                     ),
                   ),
                 ),
-                // Efek Gradien Hitam di bawah gambar agar teks terbaca
                 Container(
                   height: 280,
                   decoration: BoxDecoration(
@@ -252,15 +390,12 @@ class _BookingPageState extends State<BookingPage> {
                       end: Alignment.topCenter,
                       colors: [
                         const Color(0xFF121212),
-                        const Color(0xFF121212).withOpacity(0.0),
-                        const Color(
-                          0xFF121212,
-                        ).withOpacity(0.4), // Gradien atas untuk tombol back
+                        Colors.transparent,
+                        Colors.black45,
                       ],
                     ),
                   ),
                 ),
-                // Tombol Back (Kembali ke Peta)
                 Positioned(
                   top: 50,
                   left: 20,
@@ -271,7 +406,6 @@ class _BookingPageState extends State<BookingPage> {
                       decoration: BoxDecoration(
                         color: Colors.black.withOpacity(0.5),
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white24),
                       ),
                       child: const Icon(
                         Icons.arrow_back,
@@ -281,86 +415,32 @@ class _BookingPageState extends State<BookingPage> {
                     ),
                   ),
                 ),
-                // Teks Nama Toko & Rating
                 Positioned(
                   bottom: 20,
                   left: 20,
                   right: 20,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.amber,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text(
-                              "⭐ 4.8",
-                              style: TextStyle(
-                                color: Colors.black,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          const Text(
-                            "Buka sampai 22:00",
-                            style: TextStyle(
-                              color: Colors.greenAccent,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      const Text(
-                        "Gentleman's Club Barbershop",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      const Row(
-                        children: [
-                          Icon(Icons.location_on, color: Colors.grey, size: 14),
-                          SizedBox(width: 4),
-                          Text(
-                            "Jl. Sudirman No. 10 (2 KM dari lokasimu)",
-                            style: TextStyle(color: Colors.grey, fontSize: 12),
-                          ),
-                        ],
-                      ),
-                    ],
+                  child: Text(
+                    widget.shopData['shop_name'].toString().toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
               ],
             ),
 
-            // ==========================================
-            // 2. KONTEN FORM BOOKING (Area Bawah Banner)
-            // ==========================================
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // --- PILIH LAYANAN ---
                   _buildSectionTitle("PILIH LAYANAN UTAMA"),
                   const SizedBox(height: 15),
                   services.isEmpty
                       ? const Text(
-                          "Belum ada layanan tersedia",
+                          "Belum ada layanan.",
                           style: TextStyle(color: Colors.grey),
                         )
                       : Column(
@@ -368,30 +448,10 @@ class _BookingPageState extends State<BookingPage> {
                               .map((s) => _buildServiceCard(s))
                               .toList(),
                         ),
-                  const SizedBox(height: 30),
 
-                  // --- PILIH BARBER / KAPSTER ---
-                  _buildSectionTitle("PILIH KAPSTER / BARBER"),
-                  const SizedBox(height: 15),
-                  barbers.isEmpty
-                      ? const Text(
-                          "Belum ada kapster tersedia",
-                          style: TextStyle(color: Colors.grey),
-                        )
-                      : SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: barbers
-                                .map((b) => _buildBarberCard(b))
-                                .toList(),
-                          ),
-                        ),
                   const SizedBox(height: 30),
-
-                  // --- JADWAL & JAM ---
                   _buildSectionTitle("PILIH JADWAL & JAM"),
                   const SizedBox(height: 15),
-                  // Kalender Horizontal
                   SizedBox(
                     height: 90,
                     child: ListView.builder(
@@ -403,7 +463,6 @@ class _BookingPageState extends State<BookingPage> {
                             date.year == selectedDate.year &&
                             date.month == selectedDate.month &&
                             date.day == selectedDate.day;
-
                         return GestureDetector(
                           onTap: () {
                             setState(() {
@@ -437,7 +496,6 @@ class _BookingPageState extends State<BookingPage> {
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                                const SizedBox(height: 5),
                                 Text(
                                   "${date.day}",
                                   style: const TextStyle(
@@ -446,7 +504,6 @@ class _BookingPageState extends State<BookingPage> {
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                                const SizedBox(height: 5),
                                 Text(
                                   _namaBulan[date.month],
                                   style: const TextStyle(
@@ -463,209 +520,72 @@ class _BookingPageState extends State<BookingPage> {
                   ),
                   const SizedBox(height: 20),
 
-                  // Grid Jam
-                  if (selectedBarber == null || selectedService == null)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(15),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1A1A1A),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Text(
-                        "Pilih Layanan & Kapster dulu untuk melihat jam yang kosong.",
-                        style: TextStyle(color: Colors.grey, fontSize: 12),
-                        textAlign: TextAlign.center,
-                      ),
-                    )
-                  else if (timeSlots.isEmpty)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(15),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1A1A1A),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Text(
-                        "Tidak ada jam tersedia / Sedang memuat...",
-                        style: TextStyle(color: Colors.amber, fontSize: 12),
-                        textAlign: TextAlign.center,
-                      ),
-                    )
-                  else
-                    Wrap(
-                      spacing: 15,
-                      runSpacing: 15,
-                      children: timeSlots.map((slot) {
-                        bool isAvailable =
-                            slot['available'] ?? false; // Pastikan tidak null
-                        bool isSelected = selectedTime == slot['start'];
-                        return InkWell(
-                          onTap: isAvailable
-                              ? () =>
-                                    setState(() => selectedTime = slot['start'])
-                              : null,
-                          child: Container(
-                            width:
-                                (MediaQuery.of(context).size.width - 75) /
-                                3, // Bagi 3 kolom
-                            padding: const EdgeInsets.symmetric(vertical: 15),
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? Colors.amber.withOpacity(0.1)
-                                  : const Color(0xFF1A1A1A),
-                              border: Border.all(
-                                color: isSelected
-                                    ? Colors.amber
-                                    : Colors.white10,
-                              ),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              slot['start'].toString(),
-                              style: TextStyle(
-                                color: isSelected
-                                    ? Colors.amber
-                                    : (isAvailable
-                                          ? Colors.white
-                                          : Colors.white24),
-                                fontWeight: FontWeight.bold,
-                                decoration: isAvailable
-                                    ? TextDecoration.none
-                                    : TextDecoration
-                                          .lineThrough, // Coret jam yang penuh
-                              ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-
-                  const SizedBox(height: 35),
-
-                  // --- REFERENSI POTONGAN / CUSTOM ---
-                  _buildSectionTitle("REFERENSI GAYA (OPSIONAL)"),
-                  const SizedBox(height: 15),
-                  SizedBox(
-                    height: 180,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount:
-                          hairstyles.length +
-                          1, // +1 untuk tombol upload custom
-                      itemBuilder: (context, index) {
-                        if (index == 0) return _buildCustomPhotoCard();
-                        var style = hairstyles[index - 1];
-                        bool isSelected =
-                            selectedHairstyle == style && customPhoto == null;
-
-                        return GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              selectedHairstyle = style;
-                              customPhoto =
-                                  null; // Batalkan foto custom jika milih katalog
-                            });
-                          },
-                          child: Container(
-                            width: 130,
-                            margin: const EdgeInsets.only(right: 15),
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: isSelected
-                                    ? Colors.amber
-                                    : Colors.transparent,
-                                width: 2,
-                              ),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  style['image'] != null
-                                      ? Image.network(
-                                          style['image'],
-                                          fit: BoxFit.cover,
-                                        )
-                                      : Container(
-                                          color: const Color(0xFF2A2A2A),
-                                        ),
-                                  Container(
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        colors: [
-                                          Colors.black.withOpacity(0.9),
-                                          Colors.transparent,
-                                        ],
-                                        begin: Alignment.bottomCenter,
-                                        end: Alignment.center,
-                                      ),
-                                    ),
-                                  ),
-                                  Positioned(
-                                    bottom: 12,
-                                    left: 10,
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        if (isSelected)
-                                          const Text(
-                                            "DIPILIH",
-                                            style: TextStyle(
-                                              color: Colors.amber,
-                                              fontSize: 8,
-                                              fontWeight: FontWeight.bold,
-                                              letterSpacing: 1,
-                                            ),
-                                          ),
-                                        Text(
-                                          style['name']
-                                              .toString()
-                                              .toUpperCase(),
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      },
+                  // ✅ PASTE KODE INI SEBAGAI GANTINYA:
+                  const Text(
+                    "PILIH JAM BUKING",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
+                  const SizedBox(height: 12),
 
-                  const SizedBox(height: 35),
-
-                  // --- TAMBAHAN OPSIONAL ---
-                  if (selectedService != null && addons.isNotEmpty) ...[
-                    _buildSectionTitle("TAMBAHAN PERAWATAN"),
-                    const SizedBox(height: 15),
-                    ...addons.map((a) => _buildAddonCard(a)).toList(),
-                  ],
-
-                  const SizedBox(
-                    height: 50,
-                  ), // Spasi bawah agar tidak mentok Navbar
+                  // Tombol Time Picker Baru
+                  InkWell(
+                    onTap: () => _pickTime(context),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 18,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1A1A1A),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: selectedTime != null
+                              ? Colors.amber
+                              : Colors.white10,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.access_time_rounded,
+                            color: selectedTime != null
+                                ? Colors.amber
+                                : Colors.white54,
+                          ),
+                          const SizedBox(width: 15),
+                          Text(
+                            selectedTime ?? "Ketuk untuk tentukan jam...",
+                            style: TextStyle(
+                              color: selectedTime != null
+                                  ? Colors.amber
+                                  : Colors.white54,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const Spacer(),
+                          if (selectedTime != null)
+                            const Icon(
+                              Icons.check_circle,
+                              color: Colors.amber,
+                              size: 20,
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 50),
                 ],
               ),
             ),
           ],
         ),
       ),
-
-      // ==========================================
-      // BOTTOM NAVBAR: TOTAL & TOMBOL KONFIRMASI
-      // ==========================================
       bottomNavigationBar: Container(
         padding: const EdgeInsets.all(20),
         decoration: const BoxDecoration(
@@ -676,19 +596,39 @@ class _BookingPageState extends State<BookingPage> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
+              // Bagian Info Biaya & Waktu
               Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // 🔥 Teks Estimasi Waktu Baru
+                  if (selectedTime != null && selectedService != null) ...[
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.timer_outlined,
+                          color: Colors.amber,
+                          size: 12,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          "Estimasi Selesai: ${_calculateEndTime()}",
+                          style: const TextStyle(
+                            color: Colors.amber,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                  ],
+
                   const Text(
                     "TOTAL BIAYA",
-                    style: TextStyle(
-                      color: Colors.grey,
-                      fontSize: 10,
-                      letterSpacing: 1,
-                    ),
+                    style: TextStyle(color: Colors.grey, fontSize: 10),
                   ),
-                  const SizedBox(height: 5),
+                  const SizedBox(height: 2),
                   Text(
                     "Rp ${_calculateTotal()}",
                     style: const TextStyle(
@@ -699,6 +639,8 @@ class _BookingPageState extends State<BookingPage> {
                   ),
                 ],
               ),
+
+              // Tombol Konfirmasi
               ElevatedButton(
                 onPressed: isSubmitting ? null : _submitBooking,
                 style: ElevatedButton.styleFrom(
@@ -716,10 +658,13 @@ class _BookingPageState extends State<BookingPage> {
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(color: Colors.black),
+                        child: CircularProgressIndicator(
+                          color: Colors.black,
+                          strokeWidth: 2,
+                        ),
                       )
                     : const Text(
-                        "KONFIRMASI JADWAL",
+                        "KONFIRMASI",
                         style: TextStyle(fontWeight: FontWeight.w900),
                       ),
               ),
@@ -729,8 +674,6 @@ class _BookingPageState extends State<BookingPage> {
       ),
     );
   }
-
-  // --- COMPONENT BUILDERS ---
 
   Widget _buildSectionTitle(String title) {
     return Row(
@@ -750,7 +693,6 @@ class _BookingPageState extends State<BookingPage> {
             color: Colors.white,
             fontSize: 14,
             fontWeight: FontWeight.bold,
-            letterSpacing: 1,
           ),
         ),
       ],
@@ -759,6 +701,9 @@ class _BookingPageState extends State<BookingPage> {
 
   Widget _buildServiceCard(Map<String, dynamic> service) {
     bool isSelected = selectedService == service;
+    String priceDisplay =
+        service['price']?.toString().replaceAll('.00', '').split('.')[0] ?? '0';
+
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -779,38 +724,42 @@ class _BookingPageState extends State<BookingPage> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  "TREATMENT",
-                  style: TextStyle(
-                    color: Colors.amber,
-                    fontSize: 8,
-                    letterSpacing: 1.5,
-                    fontWeight: FontWeight.bold,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "TREATMENT",
+                    style: TextStyle(
+                      color: Colors.amber,
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  service['name'].toString().toUpperCase(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                  const SizedBox(height: 5),
+                  Text(
+                    service['name'].toString().toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  "Rp ${service['price']}",
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
+                  const SizedBox(height: 8),
+                  Text(
+                    "Rp $priceDisplay",
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
+            const SizedBox(width: 10),
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
@@ -827,198 +776,6 @@ class _BookingPageState extends State<BookingPage> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  // Widget khusus untuk Kapster agar layoutnya menyamping rapi
-  Widget _buildBarberCard(Map<String, dynamic> barber) {
-    bool isSelected = selectedBarber == barber;
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          selectedBarber = barber;
-          _fetchTimeSlots();
-        });
-      },
-      child: Container(
-        width: 100,
-        margin: const EdgeInsets.only(right: 12),
-        padding: const EdgeInsets.symmetric(vertical: 20),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? Colors.amber.withOpacity(0.1)
-              : const Color(0xFF1A1A1A),
-          border: Border.all(color: isSelected ? Colors.amber : Colors.white10),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          children: [
-            CircleAvatar(
-              radius: 25,
-              backgroundColor: isSelected
-                  ? Colors.amber
-                  : const Color(0xFF2A2A2A),
-              child: Icon(
-                Icons.person,
-                color: isSelected ? Colors.black : Colors.grey,
-                size: 30,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              barber['name'],
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: isSelected ? Colors.amber : Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAddonCard(Map<String, dynamic> addon) {
-    bool isSelected = selectedAddons.contains(addon);
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          if (isSelected) {
-            selectedAddons.remove(addon);
-          } else {
-            selectedAddons.add(addon);
-          }
-        });
-      },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(15),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1A1A1A),
-          border: Border.all(
-            color: isSelected ? Colors.white30 : Colors.transparent,
-          ),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  addon['name'].toString().toUpperCase(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  "+ Rp ${addon['price']}",
-                  style: const TextStyle(
-                    color: Colors.greenAccent,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            Icon(
-              isSelected ? Icons.check_circle : Icons.add_circle_outline,
-              color: isSelected ? Colors.amber : Colors.grey,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCustomPhotoCard() {
-    bool isSelected = customPhoto != null;
-    return GestureDetector(
-      onTap: _pickImage,
-      child: Container(
-        width: 130,
-        margin: const EdgeInsets.only(right: 15),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1A1A1A),
-          border: Border.all(
-            color: isSelected ? Colors.amber : Colors.white10,
-            width: 2,
-          ),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              customPhoto != null
-                  ? Image.file(customPhoto!, fit: BoxFit.cover)
-                  : const Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.add_a_photo, color: Colors.amber, size: 35),
-                        SizedBox(height: 10),
-                        Text(
-                          "UPLOAD\nFOTOMU",
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.grey,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-              if (isSelected)
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.black.withOpacity(0.9),
-                        Colors.transparent,
-                      ],
-                      begin: Alignment.bottomCenter,
-                      end: Alignment.center,
-                    ),
-                  ),
-                ),
-              if (isSelected)
-                const Positioned(
-                  bottom: 12,
-                  left: 10,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "DIPILIH",
-                        style: TextStyle(
-                          color: Colors.amber,
-                          fontSize: 8,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1,
-                        ),
-                      ),
-                      Text(
-                        "CUSTOM FOTO",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          ),
         ),
       ),
     );
