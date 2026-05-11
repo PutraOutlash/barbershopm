@@ -2,13 +2,23 @@ import 'package:barber_app/core/services/hairstyle_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
-import 'dart:io'; // 🔥 INI YANG BIKIN ERROR 'File', SEKARANG SUDAH ADA!
+import 'dart:io';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
+// 🔥 SESUAIKAN DENGAN STRUKTUR FOLDER KAMU
+import '../config/api.dart';
+
 import 'booking_page.dart';
 import 'product_page.dart';
+<<<<<<< HEAD:lib/features/customer/pages/home_page.dart
 import 'explore_page.dart'; // 🔥 Import halaman Eksplor
+=======
+import 'explore_page.dart';
+import '../services/hairstyle_service.dart';
+>>>>>>> 4fe63f4c598d313e52a713346bff71e89b54eb91:lib/screens/home_page.dart
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -18,7 +28,6 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  // --- STATE VARIABLES ---
   String userName = "Memuat...";
   String currentTime = "SISTEM AKTIF / --:--";
 
@@ -26,30 +35,24 @@ class _HomePageState extends State<HomePage> {
   Timer? _popupTimer;
   bool _showWelcomePopup = true;
 
-  // Variabel untuk fitur LIVE STATUS BARBER
-  String? selectedBarberName;
-
-  // 🔥 Variabel untuk menampung Foto Profil
   File? _profileImage;
+
+  List<Map<String, dynamic>> shopLocations = [];
+  Map<String, dynamic>? selectedShop;
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
     _updateTime();
+    _fetchShops();
 
-    // Mesin Jam
     _clockTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
       _updateTime();
     });
 
-    // Mesin Pop-up (Hilang setelah 4.5 detik)
     _popupTimer = Timer(const Duration(milliseconds: 4500), () {
-      if (mounted) {
-        setState(() {
-          _showWelcomePopup = false;
-        });
-      }
+      if (mounted) setState(() => _showWelcomePopup = false);
     });
   }
 
@@ -60,26 +63,97 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  // --- FUNGSI AMBIL DATA & FOTO ---
+  Future<void> _fetchShops() async {
+    try {
+      var url = Uri.parse('${Api.baseUrl}/map-shops');
+      var response = await http.get(url).timeout(const Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        List<dynamic> data = jsonDecode(response.body);
+        List<Map<String, dynamic>> parsedLocations = [];
+        Set<String> uniqueShopNames = {};
+
+        // 🔥 AMBIL WAKTU SEKARANG
+        DateTime now = DateTime.now();
+        double currentHour = now.hour + (now.minute / 60.0);
+
+        for (var item in data) {
+          String shopName = item['shop_name'] ?? 'Barbershop';
+          double? lat = double.tryParse(item['latitude']?.toString() ?? '');
+          double? lng = double.tryParse(item['longitude']?.toString() ?? '');
+
+          if (lat != null &&
+              lng != null &&
+              !uniqueShopNames.contains(shopName.toLowerCase())) {
+            uniqueShopNames.add(shopName.toLowerCase());
+
+            String opHours = "09:00 AM - 22:00 PM";
+            int openTime = 9;
+            int closeTime = 22;
+
+            if (shopName.toLowerCase().contains('shelby')) {
+              opHours = "10:00 AM - 23:00 PM";
+              openTime = 10;
+              closeTime = 23;
+            } else if (shopName.toLowerCase().contains('owl')) {
+              opHours = "Buka 24 Jam";
+              openTime = 0;
+              closeTime = 24;
+            } else if (shopName.toLowerCase().contains('lowo')) {
+              // 🔥 Konfigurasi Lowo Club
+              opHours = "20:00 PM - 06:00 AM";
+              openTime = 20;
+              closeTime = 6;
+            }
+
+            // 🔥 RUMUS CERDAS UNTUK SHIFT MALAM
+            bool isOpen = false;
+            if (closeTime == 24) {
+              isOpen = true; // Buka 24 Jam
+            } else if (openTime > closeTime) {
+              // Shift Malam (Contoh: Buka 20, Tutup 6)
+              // Status BUKA jika jam sekarang >= 20 ATAU jam sekarang < 6 pagi
+              isOpen = (currentHour >= openTime || currentHour < closeTime);
+            } else {
+              // Shift Normal Pagi-Malam
+              isOpen = (currentHour >= openTime && currentHour < closeTime);
+            }
+
+            parsedLocations.add({
+              "user_id": item['user_id'],
+              "shop_name": shopName,
+              "latitude": lat,
+              "longitude": lng,
+              "status": isOpen ? "BUKA" : "TUTUP",
+              "live_status": item['live_status'] ?? "KOSONG",
+              "operational_hours": opHours,
+            });
+          }
+        }
+
+        if (mounted) {
+          setState(() => shopLocations = parsedLocations);
+        }
+      }
+    } catch (e) {
+      debugPrint("Koneksi API Peta Error: $e");
+    }
+  }
+
   Future<void> _loadUserData() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String rawName = prefs.getString("user_name") ?? "Guest";
-
-    if (rawName.isNotEmpty) {
+    if (rawName.isNotEmpty)
       rawName = rawName[0].toUpperCase() + rawName.substring(1).toLowerCase();
-    }
 
-    // Mengambil path foto dari memori lokal
     String? imagePath = prefs.getString("profile_image_path");
     File? savedImage;
-    if (imagePath != null && imagePath.isNotEmpty) {
-      savedImage = File(imagePath);
-    }
+    if (imagePath != null && imagePath.isNotEmpty) savedImage = File(imagePath);
 
     if (mounted) {
       setState(() {
         userName = rawName;
-        _profileImage = savedImage; // Menyimpan foto ke UI
+        _profileImage = savedImage;
       });
     }
   }
@@ -89,18 +163,12 @@ class _HomePageState extends State<HomePage> {
     int hour = now.hour;
     int minute = now.minute;
     String ampm = hour >= 12 ? 'PM' : 'AM';
-
     hour = hour % 12;
     hour = hour == 0 ? 12 : hour;
-
     String hrStr = hour.toString().padLeft(2, '0');
     String minStr = minute.toString().padLeft(2, '0');
-
-    if (mounted) {
-      setState(() {
-        currentTime = "SISTEM AKTIF / $hrStr:$minStr $ampm";
-      });
-    }
+    if (mounted)
+      setState(() => currentTime = "SISTEM AKTIF / $hrStr:$minStr $ampm");
   }
 
   @override
@@ -109,9 +177,6 @@ class _HomePageState extends State<HomePage> {
       backgroundColor: const Color(0xFF121212),
       body: Stack(
         children: [
-          // ==========================================
-          // LAPISAN BAWAH: KONTEN UTAMA APLIKASI
-          // ==========================================
           SafeArea(
             child: SingleChildScrollView(
               padding: const EdgeInsets.only(
@@ -123,7 +188,6 @@ class _HomePageState extends State<HomePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // --- HEADER KECIL ---
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -148,7 +212,6 @@ class _HomePageState extends State<HomePage> {
                           ),
                         ],
                       ),
-                      // 🔥 Avatar Kecil di Kanan (Sudah Terhubung dengan Foto)
                       Container(
                         width: 45,
                         height: 45,
@@ -171,7 +234,6 @@ class _HomePageState extends State<HomePage> {
                   ),
                   const SizedBox(height: 30),
 
-                  // --- 🗺️ RADAR BARBERSHOP (PETA) ---
                   const Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.end,
@@ -213,8 +275,8 @@ class _HomePageState extends State<HomePage> {
                       borderRadius: BorderRadius.circular(15),
                       child: FlutterMap(
                         options: const MapOptions(
-                          initialCenter: LatLng(-8.1724, 113.6995),
-                          initialZoom: 14.0,
+                          initialCenter: LatLng(-8.1718, 113.7002),
+                          initialZoom: 13.0,
                         ),
                         children: [
                           TileLayer(
@@ -223,32 +285,61 @@ class _HomePageState extends State<HomePage> {
                             userAgentPackageName: 'com.barber.app',
                           ),
                           MarkerLayer(
-                            markers: [
-                              Marker(
-                                point: const LatLng(-8.1724, 113.6995),
-                                width: 50,
-                                height: 50,
+                            markers: shopLocations.map((shop) {
+                              bool isSelected = selectedShop == shop;
+                              Color pinColor = shop['status'] == 'BUKA'
+                                  ? Colors.amber
+                                  : Colors.grey;
+                              if (isSelected) pinColor = Colors.red;
+
+                              return Marker(
+                                point: LatLng(
+                                  shop['latitude'],
+                                  shop['longitude'],
+                                ),
+                                width: 60,
+                                height: 60,
                                 child: GestureDetector(
                                   onTap: () {
-                                    setState(() {
-                                      if (selectedBarberName == null) {
-                                        selectedBarberName =
-                                            "Gentleman's Club Barbershop";
-                                      } else {
-                                        selectedBarberName = null;
-                                      }
-                                    });
+                                    setState(
+                                      () => selectedShop = isSelected
+                                          ? null
+                                          : shop,
+                                    );
                                   },
-                                  child: Icon(
-                                    Icons.location_on,
-                                    color: selectedBarberName == null
-                                        ? Colors.amber
-                                        : Colors.red,
-                                    size: 40,
+                                  child: Column(
+                                    children: [
+                                      if (isSelected)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 4,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black87,
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            shop['shop_name'].toString(),
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 8,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      Icon(
+                                        Icons.location_on,
+                                        color: pinColor,
+                                        size: isSelected ? 45 : 35,
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              ),
-                            ],
+                              );
+                            }).toList(),
                           ),
                         ],
                       ),
@@ -256,7 +347,6 @@ class _HomePageState extends State<HomePage> {
                   ),
                   const SizedBox(height: 20),
 
-                  // --- 🔥 KOTAK LIVE STATUS & TOMBOL EMAS ---
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(20),
@@ -265,17 +355,13 @@ class _HomePageState extends State<HomePage> {
                       borderRadius: BorderRadius.circular(15),
                       border: Border.all(color: Colors.white10),
                     ),
-                    child: selectedBarberName == null
-                        ? Column(
+                    child: selectedShop == null
+                        ? const Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(
-                                Icons.radar,
-                                color: Colors.amber.withOpacity(0.4),
-                                size: 35,
-                              ),
-                              const SizedBox(height: 10),
-                              const Text(
+                              Icon(Icons.radar, color: Colors.amber, size: 35),
+                              SizedBox(height: 10),
+                              Text(
                                 "Pilih barbershop di peta",
                                 style: TextStyle(
                                   color: Colors.white,
@@ -283,9 +369,9 @@ class _HomePageState extends State<HomePage> {
                                   fontSize: 14,
                                 ),
                               ),
-                              const SizedBox(height: 4),
-                              const Text(
-                                "Untuk melihat pantauan antrean secara live",
+                              SizedBox(height: 4),
+                              Text(
+                                "Ketuk icon pin untuk melihat ketersediaan",
                                 style: TextStyle(
                                   color: Colors.grey,
                                   fontSize: 11,
@@ -301,26 +387,60 @@ class _HomePageState extends State<HomePage> {
                                   Container(
                                     width: 8,
                                     height: 8,
-                                    decoration: const BoxDecoration(
-                                      color: Colors.redAccent,
+                                    decoration: BoxDecoration(
+                                      color: selectedShop!['status'] == 'BUKA'
+                                          ? Colors.greenAccent
+                                          : Colors.redAccent,
                                       shape: BoxShape.circle,
                                     ),
                                   ),
                                   const SizedBox(width: 8),
-                                  const Text(
-                                    "LIVE STATUS",
+                                  Text(
+                                    selectedShop!['status'],
                                     style: TextStyle(
-                                      color: Colors.redAccent,
+                                      color: selectedShop!['status'] == 'BUKA'
+                                          ? Colors.greenAccent
+                                          : Colors.redAccent,
                                       fontSize: 10,
                                       fontWeight: FontWeight.bold,
                                       letterSpacing: 1,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  // 🔥 LIVE STATUS BADGE
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          selectedShop!['live_status'] ==
+                                              'SEDANG MENCUKUR'
+                                          ? Colors.orange.withOpacity(0.2)
+                                          : Colors.blue.withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      selectedShop!['live_status'],
+                                      style: TextStyle(
+                                        color:
+                                            selectedShop!['live_status'] ==
+                                                'SEDANG MENCUKUR'
+                                            ? Colors.orange
+                                            : Colors.blue,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 12),
                               Text(
-                                selectedBarberName!,
+                                selectedShop!['shop_name']
+                                    .toString()
+                                    .toUpperCase(),
                                 style: const TextStyle(
                                   color: Color(0xFFE5C07B),
                                   fontSize: 16,
@@ -328,17 +448,17 @@ class _HomePageState extends State<HomePage> {
                                 ),
                               ),
                               const SizedBox(height: 10),
-                              const Row(
+                              Row(
                                 children: [
-                                  Icon(
-                                    Icons.content_cut,
+                                  const Icon(
+                                    Icons.storefront,
                                     color: Colors.white54,
                                     size: 16,
                                   ),
-                                  SizedBox(width: 8),
+                                  const SizedBox(width: 8),
                                   Text(
-                                    "Proses cukur: #ORD-092",
-                                    style: TextStyle(
+                                    "Status: ${selectedShop!['status']}",
+                                    style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 12,
                                     ),
@@ -346,17 +466,17 @@ class _HomePageState extends State<HomePage> {
                                 ],
                               ),
                               const SizedBox(height: 6),
-                              const Row(
+                              Row(
                                 children: [
-                                  Icon(
+                                  const Icon(
                                     Icons.access_time,
                                     color: Colors.white54,
                                     size: 16,
                                   ),
-                                  SizedBox(width: 8),
+                                  const SizedBox(width: 8),
                                   Text(
-                                    "10:00 AM - 10:45 AM (Berlangsung)",
-                                    style: TextStyle(
+                                    "Jam Operasional: ${selectedShop!['operational_hours']}",
+                                    style: const TextStyle(
                                       color: Colors.grey,
                                       fontSize: 12,
                                     ),
@@ -368,24 +488,34 @@ class _HomePageState extends State<HomePage> {
                                 width: double.infinity,
                                 height: 44,
                                 child: ElevatedButton(
-                                  onPressed: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => const BookingPage(),
-                                      ),
-                                    );
-                                  },
+                                  // 🔥 DISABLE BUTTON JIKA TUTUP
+                                  onPressed: selectedShop!['status'] == 'BUKA'
+                                      ? () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) => BookingPage(
+                                                shopData: selectedShop!,
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      : null,
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFFE5C07B),
+                                    disabledBackgroundColor: Colors.white10,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                   ),
-                                  child: const Text(
-                                    "PESAN JADWAL DI SINI",
+                                  child: Text(
+                                    selectedShop!['status'] == 'BUKA'
+                                        ? "PESAN JADWAL DI SINI"
+                                        : "TOKO SEDANG TUTUP",
                                     style: TextStyle(
-                                      color: Colors.black,
+                                      color: selectedShop!['status'] == 'BUKA'
+                                          ? Colors.black
+                                          : Colors.white24,
                                       fontWeight: FontWeight.w900,
                                       letterSpacing: 1.0,
                                     ),
@@ -397,7 +527,6 @@ class _HomePageState extends State<HomePage> {
                   ),
                   const SizedBox(height: 25),
 
-                  // --- MENU BUTTONS ---
                   Row(
                     children: [
                       Expanded(
@@ -435,7 +564,6 @@ class _HomePageState extends State<HomePage> {
                   ),
                   const SizedBox(height: 35),
 
-                  // --- GAYA RAMBUT POPULER ---
                   const Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.end,
@@ -460,7 +588,6 @@ class _HomePageState extends State<HomePage> {
                   ),
                   const SizedBox(height: 15),
 
-                  // --- FUTURE BUILDER GAYA RAMBUT ---
                   FutureBuilder<List<dynamic>>(
                     future: HairstyleService.getHairstyles(),
                     builder: (context, snapshot) {
@@ -478,32 +605,16 @@ class _HomePageState extends State<HomePage> {
                       if (snapshot.hasError ||
                           !snapshot.hasData ||
                           snapshot.data!.isEmpty) {
-                        List<Map<String, String>> dummyData = [
-                          {
-                            "name": "Buzz Cut",
-                            "image":
-                                "https://images.unsplash.com/photo-1622286342621-4bd786c2447c?w=500&q=80",
-                          },
-                          {
-                            "name": "Pompadour",
-                            "image":
-                                "https://images.unsplash.com/photo-1599351431202-1e0f0137899a?w=500&q=80",
-                          },
-                          {
-                            "name": "French Crop",
-                            "image":
-                                "https://images.unsplash.com/photo-1502823403499-6ccfcf4fb453?w=500&q=80",
-                          },
-                        ];
-
-                        return SizedBox(
+                        return const SizedBox(
                           height: 220,
-                          child: ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: dummyData.length,
-                            itemBuilder: (context, index) {
-                              return _buildHairstyleCard(dummyData[index]);
-                            },
+                          child: Center(
+                            child: Text(
+                              "Belum ada gaya rambut di database.",
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 12,
+                              ),
+                            ),
                           ),
                         );
                       }
@@ -520,112 +631,12 @@ class _HomePageState extends State<HomePage> {
                       );
                     },
                   ),
-                  const SizedBox(height: 35),
-
-                  // --- LAYANAN REKOMENDASI ---
-                  const Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        "LAYANAN\nREKOMENDASI",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          height: 1.2,
-                        ),
-                      ),
-                      Text(
-                        "BERDASARKAN\nRIWAYAT",
-                        textAlign: TextAlign.right,
-                        style: TextStyle(
-                          color: Colors.grey,
-                          fontSize: 10,
-                          height: 1.2,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 15),
-
-                  Container(
-                    padding: const EdgeInsets.all(15),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E1E1E),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.white10),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: Colors.black,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(
-                            Icons.content_cut,
-                            color: Colors.amber,
-                            size: 24,
-                          ),
-                        ),
-                        const SizedBox(width: 15),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                "Premium Haircut",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              SizedBox(height: 4),
-                              Text(
-                                "Sesuai dengan riwayat bulan lalu",
-                                style: TextStyle(
-                                  color: Colors.grey,
-                                  fontSize: 10,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        ElevatedButton(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const BookingPage(),
-                              ),
-                            );
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.amber,
-                            minimumSize: const Size(60, 30),
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                          ),
-                          child: const Text(
-                            "BOOKING",
-                            style: TextStyle(
-                              color: Colors.black,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  const SizedBox(height: 50),
                 ],
               ),
             ),
           ),
 
-          // ==========================================
-          // LAPISAN ATAS: POP-UP WELCOME ANIMASI
-          // ==========================================
           AnimatedPositioned(
             duration: const Duration(milliseconds: 800),
             curve: Curves.easeInOutBack,
@@ -704,7 +715,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // --- WIDGET MENU KOTAK ---
   Widget _buildMenuCard({
     required String title,
     required String subtitle,
@@ -749,7 +759,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // --- WIDGET FOTO GAYA RAMBUT ---
   Widget _buildHairstyleCard(Map<String, dynamic> data) {
     return Container(
       width: 160,

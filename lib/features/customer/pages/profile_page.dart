@@ -1,10 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart'; // 🔥 Untuk buka WA & IG
 import 'dart:io';
+<<<<<<< HEAD:lib/features/customer/pages/profile_page.dart
 import 'dart:async'; // 🔥 Diperlukan untuk Timer Jam Live
 //import 'package:barber_app/features/auth/services/auth_service.dart';
 import 'package:barber_app/features/auth/pages/login_page.dart';
+=======
+import 'dart:async';
+import 'dart:convert';
+import '../config/api.dart';
+import 'login_page.dart';
+import 'forgot_password_page.dart'; // 🔥 Untuk fitur OTP Keamanan
+>>>>>>> 4fe63f4c598d313e52a713346bff71e89b54eb91:lib/screens/profile_page.dart
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -14,22 +24,20 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  // --- STATE VARIABLES ---
   File? _profileImage;
 
-  // Nilai default
   String userName = "Memuat...";
   String userEmail = "Memuat...";
-  String userPhone = "-";
-  String userAddress = "-";
-  String memberSince = "Mei 2026"; // 🔥 Pengganti Total Kunjungan
+  String userPhone = "Belum diatur";
+  String userAddress = "Belum diatur";
+  String memberSince = "Mei 2026";
 
-  // Variabel untuk Jam Live & Status Aktif
   String currentTime = "--:--";
   String activeSince = "--:--";
   Timer? _clockTimer;
 
   bool isDarkMode = true;
+  bool isUpdating = false; // Loading state untuk update profil
 
   static const Color goldAccent = Color(0xFFE5C07B);
   static const Color darkBackground = Color(0xFF121212);
@@ -44,23 +52,19 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   void dispose() {
-    _clockTimer
-        ?.cancel(); // Matikan timer saat pindah halaman agar tidak bocor memori
+    _clockTimer?.cancel();
     super.dispose();
   }
 
-  // --- MESIN JAM LIVE & WAKTU AKTIF ---
   void _initLiveClock() {
     final now = DateTime.now();
-    // Set waktu pertama kali halaman dibuka
     activeSince =
         "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
     _updateTime();
-
-    // Jalankan timer setiap detik untuk mengupdate jam
-    _clockTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      _updateTime();
-    });
+    _clockTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (timer) => _updateTime(),
+    );
   }
 
   void _updateTime() {
@@ -73,58 +77,71 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  // --- FUNGSI LOAD DATA (Termasuk Foto Profil) ---
   Future<void> _loadUserData() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     setState(() {
-      userName = prefs.getString("user_name") ?? "Aladdin";
-      userEmail = prefs.getString("user_email") ?? "aladdin@gmail.com";
-      userPhone = prefs.getString("user_phone") ?? "08123456789";
-      userAddress = prefs.getString("user_address") ?? "Jl. Trunojoyo, Jember";
+      userName = prefs.getString("user_name") ?? "User Barber";
+      userEmail = prefs.getString("user_email") ?? "user@gmail.com";
 
-      // Load path foto profil jika sebelumnya sudah pernah upload
+      // Jika kosong, tampilkan "Belum diatur"
+      String? phone = prefs.getString("user_phone");
+      userPhone = (phone != null && phone.isNotEmpty) ? phone : "Belum diatur";
+
+      String? address = prefs.getString("user_address");
+      userAddress = (address != null && address.isNotEmpty)
+          ? address
+          : "Belum diatur";
+
       String? imagePath = prefs.getString("profile_image_path");
-      if (imagePath != null && imagePath.isNotEmpty) {
+      if (imagePath != null && imagePath.isNotEmpty)
         _profileImage = File(imagePath);
-      }
     });
   }
 
-  // --- FUNGSI UPLOAD & SIMPAN FOTO PROFIL ---
   Future<void> _pickImage() async {
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
 
     if (image != null) {
-      setState(() {
-        _profileImage = File(image.path);
-      });
-
-      // Simpan path gambar ke memori lokal (Bisa dibaca oleh Home Page nanti)
+      setState(() => _profileImage = File(image.path));
       SharedPreferences prefs = await SharedPreferences.getInstance();
       await prefs.setString("profile_image_path", image.path);
+      _showSnackBar("Foto Profil berhasil diperbarui!", Colors.green);
+    }
+  }
 
-      // TODO: Tembak API backend (misal: upload_photo.php) untuk simpan ke MySQL Database di sini
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Foto Profil berhasil diperbarui!"),
-          backgroundColor: Colors.green,
-        ),
+  void _logout() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+    if (mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+        (route) => false,
       );
     }
   }
 
-  // --- FUNGSI LOGOUT AKTIF ---
-  void _logout() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
-
-    if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const LoginPage()),
-      );
+  // 🔥 FUNGSI MEMBUKA WHATSAPP & INSTAGRAM
+  Future<void> _launchURL(String urlString) async {
+    final Uri url = Uri.parse(urlString);
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } else {
+      _showSnackBar("Gagal membuka tautan aplikasi.", Colors.redAccent);
     }
+  }
+
+  void _showSnackBar(String message, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: color,
+      ),
+    );
   }
 
   @override
@@ -137,7 +154,6 @@ class _ProfilePageState extends State<ProfilePage> {
           style: TextStyle(
             color: isDarkMode ? Colors.white : Colors.black,
             fontWeight: FontWeight.bold,
-            letterSpacing: 1.2,
             fontSize: 16,
           ),
         ),
@@ -153,9 +169,7 @@ class _ProfilePageState extends State<ProfilePage> {
           bottom: 120,
         ),
         children: [
-          // ==========================================
-          // 1. KARTU MEMBER DIGITAL (VIP CARD)
-          // ==========================================
+          // 1. VIP CARD DIGITAL
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
@@ -181,7 +195,6 @@ class _ProfilePageState extends State<ProfilePage> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Foto Profil Kiri Atas
                     Stack(
                       children: [
                         CircleAvatar(
@@ -223,7 +236,6 @@ class _ProfilePageState extends State<ProfilePage> {
                         ),
                       ],
                     ),
-                    // 🔥 JAM LIVE (Kanan Atas)
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
@@ -259,7 +271,6 @@ class _ProfilePageState extends State<ProfilePage> {
                                   color: Colors.black,
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
-                                  letterSpacing: 1,
                                 ),
                               ),
                             ],
@@ -283,7 +294,6 @@ class _ProfilePageState extends State<ProfilePage> {
                   style: const TextStyle(color: Colors.grey, fontSize: 12),
                 ),
                 const SizedBox(height: 25),
-                // 🔥 STATISTIK BARU (Aktif Sejak & Member Sejak)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -346,12 +356,9 @@ class _ProfilePageState extends State<ProfilePage> {
               ],
             ),
           ),
-
           const SizedBox(height: 30),
 
-          // ==========================================
-          // 2. DATA DIRI (CONTACT INFO)
-          // ==========================================
+          // 2. INFORMASI KONTAK (HP & Alamat)
           const Text(
             "INFORMASI KONTAK",
             style: TextStyle(
@@ -373,12 +380,9 @@ class _ProfilePageState extends State<ProfilePage> {
               ],
             ),
           ),
-
           const SizedBox(height: 25),
 
-          // ==========================================
-          // 3. PENGATURAN & KEAMANAN
-          // ==========================================
+          // 3. PENGATURAN
           const Text(
             "PENGATURAN",
             style: TextStyle(
@@ -402,8 +406,8 @@ class _ProfilePageState extends State<ProfilePage> {
                 _divider(),
                 _menuItem(
                   Icons.lock_outline,
-                  "Keamanan & Password",
-                  onTap: _showOTPPasswordDialog,
+                  "Keamanan & Akses",
+                  onTap: _showSecurityDialog,
                 ),
                 _divider(),
                 _menuItem(
@@ -414,12 +418,9 @@ class _ProfilePageState extends State<ProfilePage> {
               ],
             ),
           ),
-
           const SizedBox(height: 35),
 
-          // ==========================================
-          // 4. TOMBOL LOGOUT
-          // ==========================================
+          // 4. LOGOUT
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.redAccent.withOpacity(0.1),
@@ -502,8 +503,8 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // --- WIDGET HELPER ---
   Widget _profileItem(IconData icon, String title, String value) {
+    bool isNotSet = value == "Belum diatur";
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
@@ -527,9 +528,12 @@ class _ProfilePageState extends State<ProfilePage> {
                 Text(
                   value,
                   style: TextStyle(
-                    color: isDarkMode ? Colors.white : Colors.black,
+                    color: isNotSet
+                        ? Colors.grey[600]
+                        : (isDarkMode ? Colors.white : Colors.black),
                     fontSize: 14,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: isNotSet ? FontWeight.normal : FontWeight.w600,
+                    fontStyle: isNotSet ? FontStyle.italic : FontStyle.normal,
                   ),
                 ),
               ],
@@ -568,102 +572,280 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _divider() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Divider(
-        color: isDarkMode ? Colors.white10 : Colors.black12,
-        thickness: 1,
-      ),
-    );
-  }
+  Widget _divider() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Divider(
+      color: isDarkMode ? Colors.white10 : Colors.black12,
+      thickness: 1,
+    ),
+  );
+  BoxDecoration _boxDecoration() => BoxDecoration(
+    color: isDarkMode ? darkCard : Colors.grey[100],
+    borderRadius: BorderRadius.circular(16),
+    border: Border.all(color: isDarkMode ? Colors.white10 : Colors.transparent),
+  );
 
-  BoxDecoration _boxDecoration() {
-    return BoxDecoration(
-      color: isDarkMode ? darkCard : Colors.grey[100],
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(
-        color: isDarkMode ? Colors.white10 : Colors.transparent,
-      ),
-    );
-  }
-
-  // --- DIALOG MODALS ---
+  // 🔥 FUNGSI EDIT DATA DIRI (NAMA, HP, ALAMAT)
   void _showEditProfileDialog() {
     TextEditingController nameController = TextEditingController(
       text: userName,
     );
     TextEditingController phoneController = TextEditingController(
-      text: userPhone,
+      text: userPhone == "Belum diatur" ? "" : userPhone,
+    );
+    TextEditingController addressController = TextEditingController(
+      text: userAddress == "Belum diatur" ? "" : userAddress,
     );
 
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: darkCard,
-        title: const Text(
-          "Edit Data Diri",
-          style: TextStyle(color: Colors.white),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                labelText: "Nama",
-                labelStyle: TextStyle(color: goldAccent),
-                enabledBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: Colors.grey),
-                ),
+      barrierDismissible: !isUpdating,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setStateDialog) {
+          return AlertDialog(
+            backgroundColor: darkCard,
+            title: const Text(
+              "Edit Data Diri",
+              style: TextStyle(color: Colors.white),
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildEditField(nameController, "Nama Lengkap"),
+                  _buildEditField(phoneController, "Nomor HP", isNumber: true),
+                  _buildEditField(
+                    addressController,
+                    "Alamat Lengkap",
+                    maxLines: 2,
+                  ),
+                ],
               ),
             ),
-            TextField(
-              controller: phoneController,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                labelText: "Nomor Telepon",
-                labelStyle: TextStyle(color: goldAccent),
-                enabledBorder: UnderlineInputBorder(
-                  borderSide: BorderSide(color: Colors.grey),
+            actions: [
+              TextButton(
+                onPressed: isUpdating ? null : () => Navigator.pop(context),
+                child: const Text(
+                  "Batal",
+                  style: TextStyle(color: Colors.grey),
                 ),
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Batal", style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: goldAccent,
-              foregroundColor: Colors.black,
-            ),
-            onPressed: () async {
-              setState(() {
-                userName = nameController.text;
-                userPhone = phoneController.text;
-              });
-              SharedPreferences prefs = await SharedPreferences.getInstance();
-              prefs.setString("user_name", nameController.text);
-              prefs.setString("user_phone", phoneController.text);
-              Navigator.pop(context);
-            },
-            child: const Text("Simpan"),
-          ),
-        ],
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: goldAccent,
+                  foregroundColor: Colors.black,
+                ),
+                onPressed: isUpdating
+                    ? null
+                    : () async {
+                        setStateDialog(() => isUpdating = true);
+
+                        try {
+                          SharedPreferences prefs =
+                              await SharedPreferences.getInstance();
+                          String? token = prefs.getString("token");
+
+                          // 🔥 TEMBAK API LARAVEL UNTUK UPDATE DATABASE
+                          var response = await http.post(
+                            Uri.parse(
+                              "${Api.baseUrl}/profile/update",
+                            ), // Rute API Laravel
+                            headers: {
+                              "Accept": "application/json",
+                              "Authorization": "Bearer $token",
+                            },
+                            body: {
+                              "name": nameController.text,
+                              "phone": phoneController.text,
+                              "address": addressController.text,
+                            },
+                          );
+
+                          if (response.statusCode == 200) {
+                            // Jika sukses, simpan juga ke memori HP
+                            await prefs.setString(
+                              "user_name",
+                              nameController.text,
+                            );
+                            await prefs.setString(
+                              "user_phone",
+                              phoneController.text,
+                            );
+                            await prefs.setString(
+                              "user_address",
+                              addressController.text,
+                            );
+
+                            // Update tampilan UI Profile
+                            setState(() {
+                              userName = nameController.text;
+                              userPhone = phoneController.text.isEmpty
+                                  ? "Belum diatur"
+                                  : phoneController.text;
+                              userAddress = addressController.text.isEmpty
+                                  ? "Belum diatur"
+                                  : addressController.text;
+                            });
+
+                            if (mounted) Navigator.pop(context);
+                            _showSnackBar(
+                              "Profil berhasil diperbarui!",
+                              Colors.green,
+                            );
+                          } else {
+                            _showSnackBar(
+                              "Gagal memperbarui profil di server.",
+                              Colors.redAccent,
+                            );
+                          }
+                        } catch (e) {
+                          _showSnackBar(
+                            "Terjadi kesalahan jaringan.",
+                            Colors.redAccent,
+                          );
+                        } finally {
+                          setStateDialog(() => isUpdating = false);
+                        }
+                      },
+                child: isUpdating
+                    ? const SizedBox(
+                        width: 15,
+                        height: 15,
+                        child: CircularProgressIndicator(
+                          color: Colors.black,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Text(
+                        "Simpan",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 
-  void _showOTPPasswordDialog() {
-    Navigator.pop(context);
+  Widget _buildEditField(
+    TextEditingController controller,
+    String label, {
+    bool isNumber = false,
+    int maxLines = 1,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: TextField(
+        controller: controller,
+        style: const TextStyle(color: Colors.white),
+        keyboardType: isNumber ? TextInputType.phone : TextInputType.text,
+        maxLines: maxLines,
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: const TextStyle(color: goldAccent, fontSize: 12),
+          enabledBorder: const UnderlineInputBorder(
+            borderSide: BorderSide(color: Colors.grey),
+          ),
+          focusedBorder: const UnderlineInputBorder(
+            borderSide: BorderSide(color: goldAccent),
+          ),
+        ),
+      ),
+    );
   }
 
-  // 🔥 UPDATE: PUSAT BANTUAN DENGAN LOGO WA & IG
+  // 🔥 MENU KEAMANAN: UBAH EMAIL & PASSWORD
+  void _showSecurityDialog() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: darkCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(25),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                "Keamanan & Akses",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Opsi Ubah Password (Lompat ke fitur Lupa Password OTP yang sudah kita buat)
+              ListTile(
+                leading: const Icon(Icons.password_rounded, color: goldAccent),
+                title: const Text(
+                  "Ubah Password",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                subtitle: const Text(
+                  "Reset sandi menggunakan OTP via Email",
+                  style: TextStyle(color: Colors.grey, fontSize: 12),
+                ),
+                trailing: const Icon(
+                  Icons.arrow_forward_ios,
+                  size: 14,
+                  color: Colors.grey,
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const ForgotPasswordPage(),
+                    ),
+                  );
+                },
+              ),
+              const Divider(color: Colors.white10),
+
+              // Opsi Ubah Email (Nanti Backendnya menyusul)
+              ListTile(
+                leading: const Icon(Icons.alternate_email, color: goldAccent),
+                title: const Text(
+                  "Ubah Email",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                subtitle: const Text(
+                  "Ganti email utama akun Anda",
+                  style: TextStyle(color: Colors.grey, fontSize: 12),
+                ),
+                trailing: const Icon(
+                  Icons.arrow_forward_ios,
+                  size: 14,
+                  color: Colors.grey,
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showSnackBar(
+                    "Fitur ubah Email sedang dalam pengembangan Backend!",
+                    Colors.amber,
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // 🔥 PUSAT BANTUAN YANG BISA DI-KLIK
   void _showHelpDialog() {
     showDialog(
       context: context,
@@ -683,46 +865,51 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
             const SizedBox(height: 20),
 
-            // Item WhatsApp
-            Row(
-              children: [
-                Image.network(
-                  "https://cdn-icons-png.flaticon.com/512/733/733585.png", // Logo WhatsApp Asli
-                  width: 24,
-                  height: 24,
-                ),
-                const SizedBox(width: 12),
-                const Text(
-                  "089639126464",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
+            // Tombol Klik WhatsApp
+            InkWell(
+              onTap: () => _launchURL("https://wa.me/6289639126464"),
+              child: Row(
+                children: [
+                  Image.network(
+                    "https://cdn-icons-png.flaticon.com/512/733/733585.png",
+                    width: 24,
+                    height: 24,
                   ),
-                ),
-              ],
+                  const SizedBox(width: 12),
+                  const Text(
+                    "089639126464",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(height: 20),
 
-            const SizedBox(height: 15),
-
-            // Item Instagram
-            Row(
-              children: [
-                Image.network(
-                  "https://cdn-icons-png.flaticon.com/512/2111/2111463.png", // Logo Instagram Asli
-                  width: 24,
-                  height: 24,
-                ),
-                const SizedBox(width: 12),
-                const Text(
-                  "@bloombelly.app",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
+            // Tombol Klik Instagram
+            InkWell(
+              onTap: () => _launchURL("https://instagram.com/bloombelly.app"),
+              child: Row(
+                children: [
+                  Image.network(
+                    "https://cdn-icons-png.flaticon.com/512/2111/2111463.png",
+                    width: 24,
+                    height: 24,
                   ),
-                ),
-              ],
+                  const SizedBox(width: 12),
+                  const Text(
+                    "@bloombelly.app",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
