@@ -3,8 +3,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'dart:async'; // 🔥 Diperlukan untuk Timer Jam Live
-import '../services/auth_service.dart';
-import 'login_page.dart';
+//import 'package:barber_app/features/auth/services/auth_service.dart';
+import 'package:barber_app/features/auth/pages/login_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});

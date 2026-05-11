@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import '../config/api.dart';
-import '../models/user_model.dart';
+import '../../../core/config/api.dart';
+import '../../../core/models/user_model.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -64,10 +64,11 @@ class _RegisterPageState extends State<RegisterPage> {
       // Konversi ke Map (Paket) lalu tambahkan password_confirmation
       Map<String, dynamic> dataKirim = newUser.toJson();
       dataKirim['password_confirmation'] = confirmPasswordController.text;
+      dataKirim['role'] = 'customer';
 
       // 4. Tembak API Laravel (Perhatikan URL-nya pakai /register, bukan register.php)
       var response = await http.post(
-        Uri.parse("${Api.baseUrl}/register"),
+        Uri.parse("${Api.baseUrl}/api/register"),
         headers: {
           "Accept":
               "application/json", // Wajib untuk Laravel agar membalas dengan JSON

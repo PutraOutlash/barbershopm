@@ -1,10 +1,10 @@
+import 'package:barber_app/core/config/api.dart';
+import 'package:barber_app/core/services/booking_service.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io';
-import '../config/api.dart';
-import '../services/booking_service.dart';
 
 class BookingPage extends StatefulWidget {
   const BookingPage({super.key});

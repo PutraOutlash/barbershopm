@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
-import '../config/api.dart';
-import '../models/user_model.dart';
+import '../../../core/config/api.dart';
+import '../../../core/models/user_model.dart';
 import 'register_page.dart'; // Sesuaikan path ini dengan letak file register_page.dart kamu
-import 'main_page.dart';
+import '../../customer/pages/main_page.dart';
+import '../../barber/pages/home_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -41,10 +42,10 @@ class _LoginPageState extends State<LoginPage> {
     try {
       // 2. Tembak API Login Laravel
       var response = await http.post(
-        Uri.parse("${Api.baseUrl}/login"),
+        Uri.parse("${Api.baseUrl}/api/login"), // ✅ FIX
         headers: {
-          "Accept":
-              "application/json", // Wajib agar Laravel merespons dengan JSON
+          "Accept": "application/json",
+          "Content-Type": "application/x-www-form-urlencoded",
         },
         body: {
           "login": emailController.text,
@@ -57,37 +58,41 @@ class _LoginPageState extends State<LoginPage> {
 
       // 3. Cek apakah Login Berhasil (Laravel biasanya mengirimkan 'token')
       if (response.statusCode == 200 && result['token'] != null) {
-        // 4. TANGKAP DAN SIMPAN TOKEN & DATA USER KE MEMORI HP
-        SharedPreferences prefs = await SharedPreferences.getInstance();
+      SharedPreferences prefs = await SharedPreferences.getInstance();
 
-        // Simpan Token Sanctum (SANGAT PENTING untuk akses fitur lain)
-        await prefs.setString("token", result['token']);
+      await prefs.setString("token", result['token']);
 
-        // Mengubah JSON User dari Laravel menjadi Objek Dart
-        UserModel userYangLogin = UserModel.fromJson(result['user']);
+      UserModel userYangLogin = UserModel.fromJson(result['user']);
 
-        // Simpan data profil penting untuk Beranda/Profile
-        await prefs.setString("user_name", userYangLogin.name);
-        await prefs.setString("user_role", userYangLogin.role ?? 'customer');
+      await prefs.setString("user_name", userYangLogin.name);
+      await prefs.setString("user_role", userYangLogin.role ?? 'customer');
+      await prefs.setBool("is_logged_in", true);
 
-        // Ganti status login (Fitur Remember Me)
-        await prefs.setBool("is_logged_in", true);
+      _showSnackBar("Welcome back, ${userYangLogin.name}!", Colors.green);
 
-        _showSnackBar("Welcome back, ${userYangLogin.name}!", Colors.green);
+      // 🔥 TAMBAHAN PENTING
+      String role = userYangLogin.role ?? 'customer';
 
-        // 5. Pindah ke MainPage secara langsung
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const MainPage(),
-            ), // 🔥 Ubah jadi ini
-          );
-        }
+    if (mounted) {
+      if (role == 'barber') {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const HomePage(), // 👈 barber
+          ),
+        );
       } else {
-        // Jika password salah atau user tidak ditemukan
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const MainPage(), // 👈 customer
+          ),
+        );
+      }
+    }
+  } else {
         _showSnackBar(
-          result['message'] ?? "Email atau Password salah!",
+          result['message'] ?? "Login failed. Please check your credentials.",
           Colors.redAccent,
         );
       }
