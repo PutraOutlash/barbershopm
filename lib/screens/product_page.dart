@@ -1,378 +1,254 @@
 import 'package:flutter/material.dart';
-import '../services/product_service.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import '../config/api.dart';
 
 class ProductPage extends StatefulWidget {
-  // Menerima data nama toko dari Beranda
-  final String? shopName;
+  // 🔥 INI DIA KUNCI JAWABANNYA! Sekarang dia menerima 'shopData'
+  final Map<String, dynamic> shopData;
 
-  const ProductPage({super.key, this.shopName});
+  const ProductPage({super.key, required this.shopData});
 
   @override
   State<ProductPage> createState() => _ProductPageState();
 }
 
 class _ProductPageState extends State<ProductPage> {
+  List<dynamic> products = [];
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchProducts();
+  }
+
+  Future<void> _fetchProducts() async {
+    try {
+      // Ambil ID Barber dari data toko yang diklik
+      String barberId = widget.shopData['user_id'].toString();
+      var response = await http.get(
+        Uri.parse('${Api.baseUrl}/products/$barberId'),
+      );
+
+      if (response.statusCode == 200) {
+        setState(() {
+          products = jsonDecode(response.body);
+          isLoading = false;
+        });
+      } else {
+        setState(() => isLoading = false);
+      }
+    } catch (e) {
+      setState(() => isLoading = false);
+      debugPrint("Error Fetch Products: $e");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Ambil nama toko dari data yang dikirim HomePage
+    String shopName = widget.shopData['shop_name'].toString().toUpperCase();
+
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
       appBar: AppBar(
         backgroundColor: const Color(0xFF121212),
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.amber),
-        title: Text(
-          widget.shopName != null ? "KATALOG PRODUK" : "TOKO PRODUK",
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.2,
-            fontSize: 16,
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back_ios_new,
+            color: Color(0xFFE5C07B),
+            size: 20,
           ),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Column(
+          children: [
+            const Text(
+              "AMUNISI PERAWATAN",
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              shopName,
+              style: const TextStyle(color: Colors.grey, fontSize: 10),
+            ),
+          ],
         ),
         centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.info_outline),
-            onPressed: () {
-              // Pop-up informasi konsep etalase
-              _showInfoDialog(context);
-            },
-          ),
-          const SizedBox(width: 10),
-        ],
       ),
-
-      body: FutureBuilder<List<dynamic>>(
-        future: ProductService.getProducts(),
-        builder: (context, snapshot) {
-          // 1. Jika masih loading
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(color: Colors.amber),
-            );
-          }
-
-          // 2. Jika terjadi error
-          if (snapshot.hasError) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.error_outline,
-                    color: Colors.redAccent,
-                    size: 60,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    "Gagal memuat produk.\n${snapshot.error}",
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.grey),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          // 3. Filter produk berdasarkan toko yang dipilih di Peta
-          // Asumsi: Databasemu memiliki field 'shop' atau 'barber_name'
-          var allProducts = snapshot.data ?? [];
-          var products = widget.shopName != null
-              ? allProducts.where((p) => p['shop'] == widget.shopName).toList()
-              : allProducts; // Jika tidak ada shopName, tampilkan semua (opsional)
-
-          // 4. Jika user belum milih toko di beranda
-          if (widget.shopName == null) {
-            return _buildEmptyState(
-              icon: Icons.storefront_outlined,
-              title: "Pilih Barbershop Dulu",
-              message:
-                  "Kembali ke beranda dan pilih pin barbershop di peta untuk melihat produk yang mereka jual.",
-              showBackButton: true,
-            );
-          }
-
-          // 5. Jika toko tidak punya produk
-          if (products.isEmpty) {
-            return _buildEmptyState(
-              icon: Icons.inventory_2_outlined,
-              title: widget.shopName!,
-              message:
-                  "Barbershop ini belum menambahkan katalog produk ke dalam sistem.",
-              showBackButton: false,
-            );
-          }
-
-          // 6. TAMPILAN NORMAL (Toko punya produk)
-          return SingleChildScrollView(
-            padding: const EdgeInsets.only(
-              left: 20,
-              right: 20,
-              top: 10,
-              bottom: 40,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Banner Info Toko
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(15),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1C1C1E),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white10),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.store, color: Colors.amber, size: 24),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              "Etalase resmi dari:",
-                              style: TextStyle(
-                                color: Colors.grey,
-                                fontSize: 10,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              widget.shopName!,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                // Grid Produk
-                GridView.builder(
-                  physics: const NeverScrollableScrollPhysics(),
-                  shrinkWrap: true,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    childAspectRatio:
-                        0.58, // Diubah agar kartu lebih panjang dan tidak overflow
-                    crossAxisSpacing: 15,
-                    mainAxisSpacing: 15,
-                  ),
-                  itemCount: products.length,
-                  itemBuilder: (context, index) {
-                    return _buildProductCard(products[index], context);
-                  },
-                ),
-              ],
-            ),
-          );
-        },
-      ),
+      body: isLoading
+          ? const Center(
+              child: CircularProgressIndicator(color: Color(0xFFE5C07B)),
+            )
+          : products.isEmpty
+          ? _buildEmptyState(shopName)
+          : _buildProductGrid(),
     );
   }
 
-  // --- WIDGET KARTU PRODUK PREMIUM ---
-  Widget _buildProductCard(Map<String, dynamic> item, BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF1C1C1E),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white10),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.3),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Gambar Produk
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFF2C2C2E),
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(15),
-                ),
-                image: item['image'] != null
-                    ? DecorationImage(
-                        image: NetworkImage(item['image']),
-                        fit: BoxFit.cover,
-                      )
-                    : null,
-              ),
-              child: item['image'] == null
-                  ? const Center(
-                      child: Icon(Icons.image, color: Colors.grey, size: 40),
-                    )
-                  : null,
-            ),
-          ),
-
-          // Detail Produk
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Kategori (Bisa diganti jika databasemu punya field kategori)
-                Text(
-                  (item['category'] ?? "Grooming").toString().toUpperCase(),
-                  style: const TextStyle(
-                    color: Colors.amber,
-                    fontSize: 8,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1,
-                  ),
-                ),
-                const SizedBox(height: 6),
-
-                // Nama Produk
-                Text(
-                  item['name'] ?? "Produk Tanpa Nama",
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 8),
-
-                // Harga Produk
-                Text(
-                  "Rp ${item['price'] ?? '0'}",
-                  style: const TextStyle(
-                    color: Colors.greenAccent,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                // Info Pengganti Keranjang Belanja
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.amber.withOpacity(0.3)),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      "TERSEDIA DI KASIR",
-                      style: TextStyle(
-                        color: Colors.amber,
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // --- WIDGET EMPTY STATE (Jika Kosong) ---
-  Widget _buildEmptyState({
-    required IconData icon,
-    required String title,
-    required String message,
-    required bool showBackButton,
-  }) {
+  // 🔥 TAMPILAN ANIMASI & KALIMAT JIKA BARBER TIDAK JUALAN PRODUK
+  Widget _buildEmptyState(String shopName) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(30),
+        padding: const EdgeInsets.all(30.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 80, color: Colors.grey.withOpacity(0.3)),
-            const SizedBox(height: 20),
-            Text(
-              title,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+            Container(
+              padding: const EdgeInsets.all(30),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1C1C1E),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white10),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.5),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
               ),
-              textAlign: TextAlign.center,
+              child: const Icon(
+                Icons.production_quantity_limits_rounded,
+                size: 80,
+                color: Colors.grey,
+              ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 35),
+
+            const Text(
+              "Rak Masih Kosong",
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1,
+              ),
+            ),
+            const SizedBox(height: 15),
             Text(
-              message,
+              "Saat ini, $shopName belum menyediakan amunisi perawatan rambut (Gatsby, Powder, dll) di etalase digital mereka.\n\nSilakan cek kembali di lain waktu!",
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: Colors.grey,
-                fontSize: 14,
-                height: 1.5,
+                fontSize: 13,
+                height: 1.6,
               ),
             ),
-            const SizedBox(height: 30),
-            if (showBackButton)
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.amber,
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 25,
-                    vertical: 12,
-                  ),
-                ),
-                child: const Text(
-                  "Kembali ke Peta",
-                  style: TextStyle(fontWeight: FontWeight.bold),
+            const SizedBox(height: 40),
+
+            OutlinedButton.icon(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(
+                Icons.arrow_back,
+                size: 16,
+                color: Color(0xFFE5C07B),
+              ),
+              label: const Text(
+                "KEMBALI KE RADAR",
+                style: TextStyle(
+                  color: Color(0xFFE5C07B),
+                  fontWeight: FontWeight.bold,
                 ),
               ),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                side: const BorderSide(color: Color(0xFFE5C07B)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  // --- DIALOG INFORMASI ETALASE ---
-  void _showInfoDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
-        title: const Text(
-          "Informasi Katalog",
-          style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold),
-        ),
-        content: const Text(
-          "Halaman ini adalah etalase digital. Semua produk yang tampil di sini dapat Anda beli langsung di meja kasir saat Anda datang untuk cukur rambut.",
-          style: TextStyle(color: Colors.grey, height: 1.5),
-        ),
-        actions: [
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.amber,
-              foregroundColor: Colors.black,
-            ),
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Mengerti"),
-          ),
-        ],
+  // Tampilan Jika Produk Tersedia
+  Widget _buildProductGrid() {
+    return GridView.builder(
+      padding: const EdgeInsets.all(20),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        childAspectRatio: 0.7,
+        crossAxisSpacing: 15,
+        mainAxisSpacing: 15,
       ),
+      itemCount: products.length,
+      itemBuilder: (context, index) {
+        var product = products[index];
+        return Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF1C1C1E),
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(color: Colors.white10),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2C2C2E),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(15),
+                    ),
+                    image: product['image_url'] != null
+                        ? DecorationImage(
+                            image: NetworkImage(product['image_url']),
+                            fit: BoxFit.cover,
+                          )
+                        : null,
+                  ),
+                  child: product['image_url'] == null
+                      ? const Center(
+                          child: Icon(Icons.image, color: Colors.grey),
+                        )
+                      : null,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      product['name'] ?? 'Nama Produk',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      "Rp ${product['price'] ?? '0'}",
+                      style: const TextStyle(
+                        color: Color(0xFFE5C07B),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
