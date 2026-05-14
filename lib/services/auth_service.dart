@@ -1,85 +1,53 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api.dart';
 
 class AuthService {
-  // 🔥 FUNGSI LOGIN (Bisa pakai Username atau Email)
+  // 1. Fungsi Login
   static Future<Map<String, dynamic>> login(
-    String
-    email, // Variabel ini sekarang menangkap input Username/Email dari halaman login
-    String password,
-  ) async {
-    try {
-      var res = await http.post(
-        Uri.parse("${Api.baseUrl}/auth/login.php"),
-        headers: {"Content-Type": "application/x-www-form-urlencoded"},
-        body: {"email": email, "password": password},
-      );
-
-      print("STATUS: ${res.statusCode}"); // 🔥 DEBUG
-      print("RESPONSE: ${res.body}"); // 🔥 DEBUG
-
-      if (res.statusCode == 200) {
-        return jsonDecode(res.body);
-      } else {
-        return {
-          "status": "failed",
-          "message": "Terjadi kesalahan server: ${res.statusCode}",
-        };
-      }
-    } catch (e) {
-      print("ERROR: $e");
-      return {
-        "status": "failed",
-        "message": "Gagal terhubung ke server. Pastikan XAMPP menyala.",
-      };
-    }
-  }
-
-  // 🔥 FUNGSI REGISTER (Dengan tambahan Username)
-  static Future<Map<String, dynamic>> register(
-    String username,
     String email,
     String password,
   ) async {
-    try {
-      var res = await http.post(
-        Uri.parse("${Api.baseUrl}/auth/register.php"),
-        body: {"username": username, "email": email, "password": password},
-      );
-      return jsonDecode(res.body);
-    } catch (e) {
-      return {"status": "error", "message": "Gagal terhubung ke server."};
-    }
+    final response = await http.post(
+      Uri.parse("${Api.baseUrl}/login"),
+      body: {'login': email, 'password': password},
+    );
+    return jsonDecode(response.body);
   }
 
-  // 🔥 FUNGSI KIRIM OTP
-  static Future<Map<String, dynamic>> sendOtp(String email) async {
-    try {
-      var res = await http.post(
-        Uri.parse('${Api.baseUrl}/auth/send_otp.php'),
-        body: {'email': email},
-      );
-      return jsonDecode(res.body);
-    } catch (e) {
-      return {"status": "error", "message": "Gagal terhubung ke server"};
+  // 2. Fungsi Ambil Profil dari Backend API
+  static Future<Map<String, dynamic>?> getProfile() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? token = prefs.getString("token");
+
+    final response = await http.get(
+      Uri.parse("${Api.baseUrl}/profile"),
+      headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
     }
+    return null;
   }
 
-  // 🔥 FUNGSI VERIFIKASI & UBAH PASSWORD
-  static Future<Map<String, dynamic>> verifyAndChangePassword(
-    String email,
-    String otp,
-    String newPassword,
-  ) async {
-    try {
-      var res = await http.post(
-        Uri.parse('${Api.baseUrl}/auth/verify_password.php'),
-        body: {'email': email, 'otp': otp, 'new_password': newPassword},
-      );
-      return jsonDecode(res.body);
-    } catch (e) {
-      return {"status": "error", "message": "Gagal terhubung ke server"};
+  // 3. Fungsi Ambil Data User dari Memori Lokal (YANG BIKIN ERROR TADI)
+  static Future<Map<String, dynamic>> getLocalUserData() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+
+    String rawName = prefs.getString("user_name") ?? "Guest";
+    if (rawName.isNotEmpty) {
+      rawName = rawName[0].toUpperCase() + rawName.substring(1).toLowerCase();
     }
+
+    String? dbPhotoUrl = prefs.getString("user_photo");
+    String? localImagePath = prefs.getString("profile_image_path");
+
+    return {
+      "userName": rawName,
+      "dbPhotoUrl": dbPhotoUrl,
+      "localImagePath": localImagePath,
+    };
   }
 }

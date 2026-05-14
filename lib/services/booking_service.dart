@@ -1,52 +1,56 @@
-import 'package:http/http.dart' as http;
-import '../config/api.dart';
 import 'dart:convert';
-import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import '../config/api.dart';
 
 class BookingService {
-  static Future<Map<String, dynamic>> createBooking({
-    required String userId,
-    required String serviceId,
-    required String barberId,
-    String? hairstyleId, // Bisa null jika pakai foto custom
-    File? imageFile, // File foto custom
-    required String date,
-    required String startTime,
-    required String endTime,
-    required String totalPrice,
-  }) async {
-    try {
-      // Gunakan MultipartRequest untuk mendukung pengiriman File
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse('${Api.baseUrl}/booking/create.php'),
-      );
-
-      // Masukkan data teks
-      request.fields['user_id'] = userId;
-      request.fields['service_id'] = serviceId;
-      request.fields['barber_id'] = barberId;
-      if (hairstyleId != null) request.fields['hairstyle_id'] = hairstyleId;
-      request.fields['date'] = date;
-      request.fields['start_time'] = startTime;
-      request.fields['end_time'] = endTime;
-      request.fields['total_price'] = totalPrice;
-
-      // Masukkan data file (jika ada)
-      if (imageFile != null) {
-        request.files.add(
-          await http.MultipartFile.fromPath('photo', imageFile.path),
-        );
-      }
-
-      // Kirim ke server
-      var streamedResponse = await request.send();
-      var response = await http.Response.fromStream(streamedResponse);
-
+  // 1. Fungsi Mengambil Semua Layanan
+  static Future<List<dynamic>> getAllServices() async {
+    final response = await http
+        .get(Uri.parse("${Api.baseUrl}/services"))
+        .timeout(const Duration(seconds: 5));
+    if (response.statusCode == 200) {
       return jsonDecode(response.body);
-    } catch (e) {
-      print("ERROR BOOKING: $e");
-      return {"status": "error", "message": "Gagal terhubung ke server"};
+    }
+    throw Exception("Gagal mengambil data layanan dari server.");
+  }
+
+  // 2. Fungsi Mengambil Slot Waktu
+  static Future<List<dynamic>> getTimeSlots() async {
+    final response = await http
+        .get(Uri.parse("${Api.baseUrl}/slots"))
+        .timeout(const Duration(seconds: 5));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    }
+    return [];
+  }
+
+  // 3. Fungsi Mengirim Pesanan (Checkout)
+  static Future<Map<String, dynamic>> submitBooking(
+    Map<String, String> data,
+  ) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? token = prefs.getString("token");
+
+    if (token == null) {
+      throw Exception("Kamu belum login! Silakan login terlebih dahulu.");
+    }
+
+    var response = await http.post(
+      Uri.parse("${Api.baseUrl}/book"),
+      headers: {"Accept": "application/json", "Authorization": "Bearer $token"},
+      body: data,
+    );
+
+    var result = jsonDecode(response.body);
+
+    // Jika sukses (Status 201 Created)
+    if (response.statusCode == 201) {
+      return result;
+    } else {
+      // Lempar error asli dari server
+      throw Exception("Error: ${result['error'] ?? result['message']}");
     }
   }
 }

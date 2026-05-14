@@ -29,8 +29,11 @@ class UserModel {
       email: json['email']?.toString() ?? "no-email",
       phone: json['phone']?.toString(),
       address: json['address']?.toString(),
-      photo: json['photo']?.toString(),
       role: json['role']?.toString() ?? "customer",
+      // Cari baris ini di dalam factory UserModel.fromJson:
+      photo:
+          json['photo']?.toString() ??
+          json['photo_url']?.toString(), // 🔥 Tambahkan pengecekan photo_url
     );
   }
 

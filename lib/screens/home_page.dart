@@ -1,19 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import 'dart:io';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:geolocator/geolocator.dart'; // 🔥 Tambahkan ini
+import 'package:geolocator/geolocator.dart';
 
-// 🔥 SESUAIKAN DENGAN STRUKTUR FOLDER KAMU
-import '../config/api.dart';
+// 🔥 IMPORT HALAMAN LAIN
 import 'booking_page.dart';
 import 'product_page.dart';
 import 'explore_page.dart';
+
+// 🔥 IMPORT SEMUA ASISTEN KITA
+import '../services/auth_service.dart';
+import '../services/barber_service.dart';
 import '../services/hairstyle_service.dart';
+
+// 🔥 IMPORT SEMUA WIDGETS KITA
+import '../widgets/menu_card_widget.dart';
+import '../widgets/popular_service_card.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -30,8 +34,8 @@ class _HomePageState extends State<HomePage> {
   Timer? _popupTimer;
   bool _showWelcomePopup = true;
 
-  File? _profileImage; // Foto dari memori lokal (fallback)
-  String? profileImageUrl; // Foto asli dari Database Laravel
+  File? _profileImage;
+  String? profileImageUrl;
 
   List<Map<String, dynamic>> shopLocations = [];
   Map<String, dynamic>? selectedShop;
@@ -60,58 +64,38 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  // 🔥 FUNGSI API PETA YANG SUDAH DINAMIS (TIDAK ADA HARDCODE)
+  // --- FUNGSI MENGGUNAKAN ASISTEN ---
   Future<void> _fetchShops() async {
-    try {
-      var url = Uri.parse('${Api.baseUrl}/map-shops');
-      var response = await http.get(url).timeout(const Duration(seconds: 5));
+    var shops = List<Map<String, dynamic>>.from(
+      await BarberService.getMapShops(),
+    );
+    if (mounted) setState(() => shopLocations = shops);
+  }
 
-      if (response.statusCode == 200) {
-        List<dynamic> data = jsonDecode(response.body);
-        List<Map<String, dynamic>> parsedLocations = [];
-        Set<String> uniqueShopNames = {};
+  Future<void> _loadUserData() async {
+    var userData = await AuthService.getLocalUserData();
 
-        for (var item in data) {
-          String shopName = item['shop_name'] ?? 'Barbershop';
-          double? lat = double.tryParse(item['latitude']?.toString() ?? '');
-          double? lng = double.tryParse(item['longitude']?.toString() ?? '');
+    File? savedImage;
+    if (userData['localImagePath'] != null &&
+        userData['localImagePath'].isNotEmpty) {
+      savedImage = File(userData['localImagePath']);
+    }
 
-          if (lat != null &&
-              lng != null &&
-              !uniqueShopNames.contains(shopName.toLowerCase())) {
-            uniqueShopNames.add(shopName.toLowerCase());
-
-            // Mengambil status yang sudah dihitung oleh Laravel
-            String opHours = item['operational_hours'] ?? "Tidak diketahui";
-            String status = item['status'] ?? "TUTUP";
-            String liveStatus = item['live_status'] ?? "KOSONG";
-
-            parsedLocations.add({
-              "user_id": item['user_id'],
-              "shop_name": shopName,
-              "latitude": lat,
-              "longitude": lng,
-              "status": status,
-              "live_status": liveStatus,
-              "operational_hours": opHours,
-            });
-          }
-        }
-
-        if (mounted) setState(() => shopLocations = parsedLocations);
-      }
-    } catch (e) {
-      debugPrint("Koneksi API Peta Error: $e");
+    if (mounted) {
+      setState(() {
+        userName = userData['userName'];
+        profileImageUrl = userData['dbPhotoUrl'];
+        _profileImage = savedImage;
+      });
     }
   }
 
-  // 🔥 FUNGSI MENCARI BARBERSHOP TERDEKAT (GPS)
+  // --- LOGIKA LOKASI GPS (Tetap di sini karena mengubah UI langsung) ---
   Future<void> _findNearestShop() async {
     if (shopLocations.isEmpty) return;
 
     setState(() => isFindingNearest = true);
     try {
-      // 1. Minta izin GPS
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -119,7 +103,6 @@ class _HomePageState extends State<HomePage> {
           throw "Izin lokasi ditolak";
       }
 
-      // 2. Ambil kordinat user saat ini
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
@@ -127,7 +110,6 @@ class _HomePageState extends State<HomePage> {
       Map<String, dynamic>? nearestShop;
       double minDistance = double.infinity;
 
-      // 3. Hitung jarak ke SEMUA toko pakai rumus cerdas
       for (var shop in shopLocations) {
         double distance = Geolocator.distanceBetween(
           position.latitude,
@@ -142,12 +124,11 @@ class _HomePageState extends State<HomePage> {
         }
       }
 
-      // 4. Pilih toko terdekat secara otomatis
       if (nearestShop != null) {
         setState(() => selectedShop = nearestShop);
         String distanceKm = (minDistance / 1000).toStringAsFixed(1);
         _showSnackBar(
-          "Toko terdekat ditemukan: ${nearestShop['shop_name']} (Jarak: $distanceKm km)",
+          "Toko terdekat: ${nearestShop['shop_name']} ($distanceKm km)",
           Colors.green,
         );
       }
@@ -155,29 +136,6 @@ class _HomePageState extends State<HomePage> {
       _showSnackBar("Gagal melacak lokasi: $e", Colors.redAccent);
     } finally {
       setState(() => isFindingNearest = false);
-    }
-  }
-
-  // 🔥 MENGAMBIL FOTO DARI DATABASE/MEMORI
-  Future<void> _loadUserData() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String rawName = prefs.getString("user_name") ?? "Guest";
-    if (rawName.isNotEmpty) {
-      rawName = rawName[0].toUpperCase() + rawName.substring(1).toLowerCase();
-    }
-
-    String? dbPhotoUrl = prefs.getString("user_photo");
-    String? localImagePath = prefs.getString("profile_image_path");
-    File? savedImage;
-    if (localImagePath != null && localImagePath.isNotEmpty)
-      savedImage = File(localImagePath);
-
-    if (mounted) {
-      setState(() {
-        userName = rawName;
-        profileImageUrl = dbPhotoUrl;
-        _profileImage = savedImage;
-      });
     }
   }
 
@@ -210,6 +168,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // --- UI START ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -227,6 +186,7 @@ class _HomePageState extends State<HomePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // ================= HEADER & FOTO PROFIL =================
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -251,7 +211,6 @@ class _HomePageState extends State<HomePage> {
                           ),
                         ],
                       ),
-                      // 🔥 FOTO PROFIL
                       Container(
                         width: 45,
                         height: 45,
@@ -286,7 +245,6 @@ class _HomePageState extends State<HomePage> {
 
                   // ================= PETA RADAR =================
                   Row(
-                    // 🔥 Hapus kata 'const' di depan Row ini
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
@@ -298,7 +256,6 @@ class _HomePageState extends State<HomePage> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      // 🔥 SULAP MENJADI TOMBOL PINTAR
                       GestureDetector(
                         onTap: isFindingNearest ? null : _findNearestShop,
                         child: Container(
@@ -610,11 +567,11 @@ class _HomePageState extends State<HomePage> {
                   ),
                   const SizedBox(height: 25),
 
-                  // ================= MENU BUTTONS =================
+                  // ================= MENU BUTTONS MENGGUNAKAN WIDGETS =================
                   Row(
                     children: [
                       Expanded(
-                        child: _buildMenuCard(
+                        child: MenuCardWidget(
                           title: "KATALOG GAYA",
                           subtitle: "PILIH KARAKTERMU",
                           icon: Icons.style,
@@ -628,7 +585,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                       const SizedBox(width: 15),
                       Expanded(
-                        child: _buildMenuCard(
+                        child: MenuCardWidget(
                           title: "TOKO PRODUK",
                           subtitle: "AMUNISI PERAWATAN",
                           icon: Icons.shopping_bag,
@@ -654,7 +611,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                   const SizedBox(height: 35),
 
-                  // ================= GAYA RAMBUT BAWAH =================
+                  // ================= GAYA RAMBUT BAWAH MENGGUNAKAN WIDGETS =================
                   const Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.end,
@@ -682,7 +639,7 @@ class _HomePageState extends State<HomePage> {
                   FutureBuilder<List<dynamic>>(
                     future: HairstyleService.getHairstyles(),
                     builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting)
+                      if (snapshot.connectionState == ConnectionState.waiting) {
                         return const SizedBox(
                           height: 220,
                           child: Center(
@@ -691,14 +648,15 @@ class _HomePageState extends State<HomePage> {
                             ),
                           ),
                         );
+                      }
                       if (snapshot.hasError ||
                           !snapshot.hasData ||
-                          snapshot.data!.isEmpty)
+                          snapshot.data!.isEmpty) {
                         return const SizedBox(
                           height: 220,
                           child: Center(
                             child: Text(
-                              "Belum ada gaya rambut di database.",
+                              "Belum ada layanan di database.",
                               style: TextStyle(
                                 color: Colors.grey,
                                 fontSize: 12,
@@ -706,13 +664,14 @@ class _HomePageState extends State<HomePage> {
                             ),
                           ),
                         );
+                      }
                       return SizedBox(
                         height: 220,
                         child: ListView.builder(
                           scrollDirection: Axis.horizontal,
                           itemCount: snapshot.data!.length,
                           itemBuilder: (context, index) =>
-                              _buildHairstyleCard(snapshot.data![index]),
+                              PopularServiceCard(data: snapshot.data![index]),
                         ),
                       );
                     },
@@ -795,129 +754,6 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
               ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMenuCard({
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.all(15),
-        decoration: BoxDecoration(
-          color: const Color(0xFF222222),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.white10),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: Colors.white, size: 28),
-            const SizedBox(height: 15),
-            Text(
-              title,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: const TextStyle(
-                color: Colors.grey,
-                fontSize: 8,
-                letterSpacing: 0.5,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHairstyleCard(Map<String, dynamic> data) {
-    return Container(
-      width: 160,
-      margin: const EdgeInsets.only(right: 15),
-      decoration: BoxDecoration(
-        color: const Color(0xFF222222),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // BAGIAN GAMBAR
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFF333333),
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(10),
-                ),
-                image:
-                    (data['image_url'] != null &&
-                        data['image_url'].toString().isNotEmpty)
-                    ? DecorationImage(
-                        image: NetworkImage(data['image_url']),
-                        fit: BoxFit.cover,
-                      )
-                    : null,
-              ),
-              // Munculkan icon jika gambar tidak ada (NULL)
-              child:
-                  (data['image_url'] == null ||
-                      data['image_url'].toString().isEmpty)
-                  ? const Center(
-                      child: Icon(Icons.cut, color: Colors.grey, size: 40),
-                    )
-                  : null,
-            ),
-          ),
-
-          // BAGIAN KETERANGAN DATA
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  data['name'] ?? "Layanan", // Nama layanan (Haircut, dll)
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  data['shop_name'] ?? "Barbershop", // Nama toko
-                  style: const TextStyle(
-                    color: Color(0xFFE5C07B),
-                    fontSize: 9,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  "Rp ${data['price'] ?? '0'}", // Harga layanan
-                  style: const TextStyle(color: Colors.grey, fontSize: 10),
-                ),
-              ],
             ),
           ),
         ],
