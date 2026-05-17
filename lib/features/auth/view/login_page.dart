@@ -1,3 +1,4 @@
+import 'package:barber_app/features/barber/view/home/home_page.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -65,7 +66,7 @@ class _LoginPageState extends State<LoginPage> {
     try {
       // 2. Tembak API Login Laravel
       var response = await http.post(
-        Uri.parse("${Api.baseUrl}/login"),
+        Uri.parse("${Api.baseUrl}/api/login"),
         headers: {"Accept": "application/json"},
         body: {
           "login": emailController
@@ -103,12 +104,21 @@ class _LoginPageState extends State<LoginPage> {
 
         _showSnackBar("Welcome back, ${userYangLogin.name}!", Colors.green);
 
-        // 5. Pindah ke MainPage secara langsung
+        // 5. Cek role lalu arahkan halaman
         if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const MainPage()),
-          );
+          final role = userYangLogin.role?.toLowerCase();
+
+          if (role == 'barber') {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const HomePage()),
+            );
+          } else {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const MainPage()),
+            );
+          }
         }
       } else {
         _showSnackBar(

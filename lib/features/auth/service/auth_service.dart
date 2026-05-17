@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import '../../../core/config/api.dart';
+import 'package:barber_app/core/config/api.dart';
 
 class AuthService {
   // 🔥 FUNGSI LOGIN (Bisa pakai Username atau Email)
