@@ -2,27 +2,30 @@ import 'package:flutter/material.dart';
 
 // 🔥 IMPORT SERVICE DAN WIDGETS KITA
 import '../services/history_service.dart';
-import '../widgets/history_widgets.dart';
+import '../widgets/history_widgets.dart'; // Tetap diimport jika HistoryCardWidget (Tab 3) ada di sini
+import '../widgets/hst_widgets.dart'; // Import modular buatan kita
 
 class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
 
   @override
-  State<HistoryPage> createState() => _HistoryPageState();
+  // Dibuat publik (tanpa underscore) agar bisa direfresh dari MainPage
+  State<HistoryPage> createState() => HistoryPageState();
 }
 
-class _HistoryPageState extends State<HistoryPage>
+class HistoryPageState extends State<HistoryPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
   bool isLoading = true;
-  Map<String, dynamic>? activeTicket;
+  List<Map<String, dynamic>> processTickets = [];
+  List<Map<String, dynamic>> activeTickets = [];
   List<Map<String, dynamic>> pastHistories = [];
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _loadHistoryData();
   }
 
@@ -32,18 +35,22 @@ class _HistoryPageState extends State<HistoryPage>
     super.dispose();
   }
 
-  // --- FUNGSI MENGGUNAKAN ASISTEN ---
+  // Fungsi publik untuk me-refresh data dari halaman lain (seperti MainPage)
+  void refreshData() {
+    _loadHistoryData();
+  }
+
   Future<void> _loadHistoryData() async {
     setState(() => isLoading = true);
 
     try {
-      // Panggil asisten untuk ambil & merapikan data
       var data = await HistoryService.fetchHistories();
 
       if (mounted) {
         setState(() {
-          activeTicket = data['activeTicket'];
-          pastHistories = data['pastHistories'];
+          processTickets = data['processTickets'] ?? [];
+          activeTickets = data['activeTickets'] ?? [];
+          pastHistories = data['pastHistories'] ?? [];
           isLoading = false;
         });
       }
@@ -74,40 +81,94 @@ class _HistoryPageState extends State<HistoryPage>
         centerTitle: true,
         bottom: TabBar(
           controller: _tabController,
-          indicatorColor: Colors.amber,
-          labelColor: Colors.amber,
+          indicatorColor: goldAccent,
+          labelColor: goldAccent,
           unselectedLabelColor: Colors.grey,
           labelStyle: const TextStyle(
             fontWeight: FontWeight.bold,
             letterSpacing: 1,
           ),
           tabs: const [
+            Tab(text: "PROSES"),
             Tab(text: "AKTIF"),
-            Tab(text: "RIWAYAT"),
+            Tab(text: "SELESAI"),
           ],
         ),
       ),
       body: isLoading
-          ? const Center(child: CircularProgressIndicator(color: Colors.amber))
+          ? const Center(child: CircularProgressIndicator(color: goldAccent))
           : TabBarView(
               controller: _tabController,
               children: [
-                // TAB 1: TIKET AKTIF
-                activeTicket == null
-                    ? _buildEmptyActiveTicket()
-                    : ActiveTicketWidget(ticket: activeTicket!),
-
-                // TAB 2: RIWAYAT LALU
-                pastHistories.isEmpty
-                    ? const Center(
-                        child: Text(
-                          "Belum ada riwayat pesanan.",
-                          style: TextStyle(color: Colors.grey),
-                        ),
+                // ==============================
+                // TAB 1: PROSES (Nunggu ACC / Bayar)
+                // ==============================
+                processTickets.isEmpty
+                    ? const HstEmptyState(
+                        message: "Belum ada pesanan yang diproses.",
+                        icon: Icons.hourglass_empty,
                       )
                     : RefreshIndicator(
-                        color: Colors.amber,
-                        backgroundColor: const Color(0xFF1C1C1E),
+                        color: goldAccent,
+                        backgroundColor: darkCard,
+                        onRefresh: _loadHistoryData,
+                        child: ListView.builder(
+                          padding: const EdgeInsets.only(
+                            left: 20,
+                            right: 20,
+                            top: 20,
+                            bottom: 120,
+                          ),
+                          itemCount: processTickets.length,
+                          itemBuilder: (context, index) {
+                            return HstProcessCard(
+                              ticket: processTickets[index],
+                              onRefresh:
+                                  refreshData, // Panggil fungsi refresh setelah bayar
+                            );
+                          },
+                        ),
+                      ),
+
+                // ==============================
+                // TAB 2: AKTIF (Sudah Lunas)
+                // ==============================
+                activeTickets.isEmpty
+                    ? const HstEmptyState(
+                        message: "Belum ada tiket aktif.",
+                        icon: Icons.confirmation_number_outlined,
+                      )
+                    : RefreshIndicator(
+                        color: goldAccent,
+                        backgroundColor: darkCard,
+                        onRefresh: _loadHistoryData,
+                        child: ListView.builder(
+                          padding: const EdgeInsets.only(
+                            left: 20,
+                            right: 20,
+                            top: 20,
+                            bottom: 120,
+                          ),
+                          itemCount: activeTickets.length,
+                          itemBuilder: (context, index) {
+                            return HstActiveTicketCard(
+                              ticket: activeTickets[index],
+                            );
+                          },
+                        ),
+                      ),
+
+                // ==============================
+                // TAB 3: SELESAI (Riwayat Lama)
+                // ==============================
+                pastHistories.isEmpty
+                    ? const HstEmptyState(
+                        message: "Belum ada riwayat pesanan.",
+                        icon: Icons.history,
+                      )
+                    : RefreshIndicator(
+                        color: goldAccent,
+                        backgroundColor: darkCard,
                         onRefresh: _loadHistoryData,
                         child: ListView.builder(
                           padding: const EdgeInsets.only(
@@ -118,6 +179,7 @@ class _HistoryPageState extends State<HistoryPage>
                           ),
                           itemCount: pastHistories.length,
                           itemBuilder: (context, index) {
+                            // HistoryCardWidget adalah bawaan asli dari file kamu
                             return HistoryCardWidget(
                               history: pastHistories[index],
                             );
@@ -126,36 +188,6 @@ class _HistoryPageState extends State<HistoryPage>
                       ),
               ],
             ),
-    );
-  }
-
-  // UI Kecil Jika Tiket Aktif Kosong
-  Widget _buildEmptyActiveTicket() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.receipt_long,
-            size: 80,
-            color: Colors.grey.withOpacity(0.3),
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            "Belum ada jadwal aktif nih.",
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            "Yuk cari barbershop di beranda!",
-            style: TextStyle(color: Colors.grey, fontSize: 12),
-          ),
-        ],
-      ),
     );
   }
 }

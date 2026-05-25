@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'package:lottie/lottie.dart';
+
 import '../config/api.dart';
 import '../models/user_model.dart';
 import 'register_page.dart';
@@ -16,30 +18,24 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  // 🔥 TEMA WARNA PREMIUM
   static const Color goldAccent = Color(0xFFD4AF67);
   static const Color darkBackground = Color(0xFF121212);
   static const Color darkCard = Color(0xFF1C1C1E);
   static const Color subtleText = Color(0xFF8E8E93);
 
-  // --- CONTROLLER INPUT ---
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
 
   bool isPasswordVisible = false;
   bool isLoading = false;
-
-  // 🔥 Variabel untuk Remember Me
   bool _rememberMe = false;
 
   @override
   void initState() {
     super.initState();
-    // Panggil memori saat halaman pertama kali dibuka
     _loadSavedCredentials();
   }
 
-  // --- LOGIKA REMEMBER ME (BACA MEMORI) ---
   Future<void> _loadSavedCredentials() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     setState(() {
@@ -49,9 +45,7 @@ class _LoginPageState extends State<LoginPage> {
     });
   }
 
-  // --- LOGIKA LOGIN KE LARAVEL ---
   Future<void> login() async {
-    // 1. Validasi input kosong
     if (emailController.text.isEmpty || passwordController.text.isEmpty) {
       _showSnackBar(
         "Username/Email dan Password wajib diisi!",
@@ -63,13 +57,11 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => isLoading = true);
 
     try {
-      // 2. Tembak API Login Laravel
       var response = await http.post(
         Uri.parse("${Api.baseUrl}/login"),
         headers: {"Accept": "application/json"},
         body: {
-          "login": emailController
-              .text, // Backend bisa baca ini sebagai username atau email
+          "login": emailController.text,
           "password": passwordController.text,
         },
       );
@@ -77,9 +69,7 @@ class _LoginPageState extends State<LoginPage> {
       var result = jsonDecode(response.body);
       setState(() => isLoading = false);
 
-      // 3. Cek apakah Login Berhasil
       if (response.statusCode == 200 && result['token'] != null) {
-        // 4. TANGKAP DAN SIMPAN TOKEN & DATA USER
         SharedPreferences prefs = await SharedPreferences.getInstance();
 
         await prefs.setString("token", result['token']);
@@ -88,9 +78,18 @@ class _LoginPageState extends State<LoginPage> {
 
         await prefs.setString("user_name", userYangLogin.name);
         await prefs.setString("user_role", userYangLogin.role ?? 'customer');
+
+        // 🔥 INI OBAT AMNESIANYA: Simpan URL foto ke memori lokal
+        if (userYangLogin.photo != null) {
+          await prefs.setString("user_photo", userYangLogin.photo!);
+        } else {
+          await prefs.remove(
+            "user_photo",
+          ); // Bersihkan jika user belum punya foto
+        }
+
         await prefs.setBool("is_logged_in", true);
 
-        // 🔥 LOGIKA REMEMBER ME (SIMPAN/HAPUS MEMORI)
         if (_rememberMe) {
           await prefs.setString('saved_login', emailController.text);
           await prefs.setString('saved_password', passwordController.text);
@@ -103,7 +102,6 @@ class _LoginPageState extends State<LoginPage> {
 
         _showSnackBar("Welcome back, ${userYangLogin.name}!", Colors.green);
 
-        // 5. Pindah ke MainPage secara langsung
         if (mounted) {
           Navigator.pushReplacement(
             context,
@@ -138,7 +136,6 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  // --- UI BUILDER ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -150,19 +147,18 @@ class _LoginPageState extends State<LoginPage> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // HEADER
               const Text(
-                "GENTLEMAN'S CLUB",
+                "BarberOn",
                 style: TextStyle(
                   color: goldAccent,
-                  fontSize: 12,
+                  fontSize: 25,
                   letterSpacing: 3,
                   fontWeight: FontWeight.bold,
                 ),
               ),
               const SizedBox(height: 10),
               const Text(
-                "Welcome Back",
+                "Welcome",
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 32,
@@ -176,13 +172,10 @@ class _LoginPageState extends State<LoginPage> {
               ),
               const SizedBox(height: 50),
 
-              // FORM INPUT
               _buildTextField(
                 controller: emailController,
-                hintText:
-                    "Username atau Email", // 🔥 Disesuaikan agar user tahu bisa pakai keduanya
-                icon: Icons
-                    .person_outline, // Diganti jadi ikon person agar lebih universal
+                hintText: "Username atau Email",
+                icon: Icons.person_outline,
                 keyboardType: TextInputType.emailAddress,
               ),
               const SizedBox(height: 20),
@@ -198,11 +191,9 @@ class _LoginPageState extends State<LoginPage> {
               ),
               const SizedBox(height: 15),
 
-              // 🔥 BARIS REMEMBER ME & FORGOT PASSWORD
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Checkbox Remember Me
                   Row(
                     children: [
                       SizedBox(
@@ -232,11 +223,8 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     ],
                   ),
-
-                  // Tombol Forgot Password
                   TextButton(
                     onPressed: () {
-                      // 🔥 Gembok dibuka, sekarang mengarah ke halaman Forgot Password
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -262,7 +250,6 @@ class _LoginPageState extends State<LoginPage> {
               ),
               const SizedBox(height: 40),
 
-              // TOMBOL LOGIN
               SizedBox(
                 width: double.infinity,
                 height: 55,
@@ -278,13 +265,10 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                   ),
                   child: isLoading
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            color: Colors.black,
-                            strokeWidth: 2,
-                          ),
+                      ? SizedBox(
+                          width: 400,
+                          height: 400,
+                          child: Lottie.asset('assets/amonus.json'),
                         )
                       : const Text(
                           "SIGN IN",
@@ -298,7 +282,6 @@ class _LoginPageState extends State<LoginPage> {
               ),
               const SizedBox(height: 30),
 
-              // TOMBOL PINDAH KE REGISTER
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -332,7 +315,6 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  // --- WIDGET BANTUAN UNTUK TEXTFIELD ---
   Widget _buildTextField({
     required TextEditingController controller,
     required String hintText,

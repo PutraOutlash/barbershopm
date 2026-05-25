@@ -1,7 +1,9 @@
+import '../config/api.dart'; // 🔥 WAJIB IMPORT INI UNTUK MENGAMBIL BASE URL
+
 class UserModel {
   String? id;
-  String name; // BARU: Nama Asli (Wajib)
-  String username; // Nama Akun (Wajib)
+  String name;
+  String username;
   String email;
   String? password;
   String? phone;
@@ -22,6 +24,18 @@ class UserModel {
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
+    // 1. Ambil data foto mentah dari JSON
+    String? rawPhoto =
+        json['photo']?.toString() ?? json['photo_url']?.toString();
+
+    // 2. 🔥 LOGIKA ANTI URL BUNTUNG:
+    // Jika foto ada tapi tidak diawali dengan 'http' (berarti cuma path lokasi folder)
+    if (rawPhoto != null && !rawPhoto.startsWith('http')) {
+      // Kita sulap URL API (http://192.../api) menjadi URL Storage (http://192.../storage/)
+      String storageBaseUrl = Api.baseUrl.replaceAll('/api', '/storage/');
+      rawPhoto = "$storageBaseUrl$rawPhoto";
+    }
+
     return UserModel(
       id: json['id']?.toString(),
       name: json['name']?.toString() ?? "Pengguna",
@@ -30,10 +44,7 @@ class UserModel {
       phone: json['phone']?.toString(),
       address: json['address']?.toString(),
       role: json['role']?.toString() ?? "customer",
-      // Cari baris ini di dalam factory UserModel.fromJson:
-      photo:
-          json['photo']?.toString() ??
-          json['photo_url']?.toString(), // 🔥 Tambahkan pengecekan photo_url
+      photo: rawPhoto, // Masukkan URL yang sudah disempurnakan
     );
   }
 

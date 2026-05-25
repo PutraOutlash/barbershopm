@@ -20,33 +20,32 @@ class HistoryService {
     if (response.statusCode == 200) {
       List<dynamic> data = jsonDecode(response.body);
 
-      Map<String, dynamic>? tempActive;
+      List<Map<String, dynamic>> tempProcess = [];
+      List<Map<String, dynamic>> tempActive = [];
       List<Map<String, dynamic>> tempPast = [];
 
       for (var item in data) {
+        // Baca status persetujuan & status pembayaran dari database
         String status = item['status'].toString().toLowerCase();
+        String paymentStatus =
+            item['payment_status']?.toString().toLowerCase() ?? 'pending';
 
-        // Ambil nama layanan dari relasi items (jika ada)
         String serviceName = "Layanan Barber";
         if (item['items'] != null && item['items'].length > 0) {
           serviceName = item['items'][0]['name_snapshot'] ?? "Layanan Barber";
         }
 
-        // Ambil nama kapster dari relasi barber
         String barberName = item['barber'] != null
             ? item['barber']['name']
             : 'Kapster';
 
-        // Format data
         Map<String, dynamic> formattedOrder = {
           "order_id": item['order_code'] ?? "ORD-${item['id']}",
+          "snap_token": item['snap_token'],
           "shop_name": barberName,
           "address": "Lokasi Barbershop",
           "date": item['booking_date'].toString(),
-          "time": item['booking_time'].toString().substring(
-            0,
-            5,
-          ), // Ambil HH:mm
+          "time": item['booking_time'].toString().substring(0, 5),
           "barber": barberName,
           "service": serviceName,
           "total": item['total_amount'].toString(),
@@ -54,17 +53,30 @@ class HistoryService {
           "color": _getStatusColor(status),
         };
 
-        // Pisahkan Tiket Aktif & Riwayat
-        if ((status == 'pending' || status == 'waiting_approval') &&
-            tempActive == null) {
-          tempActive = formattedOrder;
+        // 🔥 LOGIKA PENYORTIRAN SANGAT KETAT SESUAI ENUM DATABASE
+        if (status == 'pending') {
+          // 1. Murni Baru Pesan -> NUNGGU ACC BARBER
+          formattedOrder['payment_state'] = 'WAITING_ACC';
+          tempProcess.add(formattedOrder);
+        } else if (status == 'confirmed' && paymentStatus == 'pending') {
+          // 2. Sudah di-ACC Barber, TAPI belum dibayar -> MUNCUL TOMBOL BAYAR
+          formattedOrder['payment_state'] = 'READY_TO_PAY';
+          tempProcess.add(formattedOrder);
+        } else if (status == 'confirmed' &&
+            (paymentStatus == 'paid' || paymentStatus == 'settlement')) {
+          // 3. Sudah di-ACC Barber, DAN Lunas -> PINDAH KE TIKET AKTIF (QR CODE)
+          tempActive.add(formattedOrder);
         } else {
+          // 4. Kalau statusnya 'completed' atau 'cancelled' -> MASUK RIWAYAT
           tempPast.add(formattedOrder);
         }
       }
 
-      // Kembalikan 2 data sekaligus dalam bentuk Map
-      return {"activeTicket": tempActive, "pastHistories": tempPast};
+      return {
+        "processTickets": tempProcess,
+        "activeTickets": tempActive,
+        "pastHistories": tempPast,
+      };
     } else {
       throw Exception("Gagal mengambil data dari server");
     }
@@ -72,15 +84,14 @@ class HistoryService {
 
   // Fungsi penentu warna status
   static Color _getStatusColor(String status) {
-    switch (status) {
+    switch (status.toLowerCase()) {
       case 'completed':
-      case 'selesai':
         return Colors.green;
       case 'cancelled':
-      case 'batal':
         return Colors.red;
+      case 'confirmed':
+        return Colors.blueAccent;
       case 'pending':
-      case 'waiting_approval':
         return Colors.amber;
       default:
         return Colors.grey;

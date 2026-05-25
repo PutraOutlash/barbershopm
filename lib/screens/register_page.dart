@@ -224,8 +224,8 @@ class _RegisterPageState extends State<RegisterPage> {
                           width: 24,
                           height: 24,
                           child: CircularProgressIndicator(
-                            color: Colors.black,
-                            strokeWidth: 2,
+                            color: Colors.white,
+                            strokeWidth: 2.0,
                           ),
                         )
                       : const Text(

@@ -3,10 +3,9 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api.dart';
-import '../models/user_model.dart'; // Import model milik Bos
+import '../models/user_model.dart';
 
 class ProfileService {
-  // 1. Ambil Data Profil
   static Future<UserModel?> getProfile() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? token = prefs.getString("token");
@@ -20,15 +19,11 @@ class ProfileService {
       var data = jsonDecode(response.body);
       UserModel user = UserModel.fromJson(data);
 
-      // Simpan ke memori lokal
       await prefs.setString("user_name", user.name);
       await prefs.setString("user_email", user.email);
-
-      // 🔥 FIX 1: Tambahkan pengaman "?? 'Belum diatur'" jika nilainya null
       await prefs.setString("user_phone", user.phone ?? "Belum diatur");
       await prefs.setString("user_address", user.address ?? "Belum diatur");
 
-      // 🔥 FIX 2: Ubah photoUrl menjadi photo sesuai nama di user_model.dart
       if (user.photo != null && user.photo!.isNotEmpty) {
         await prefs.setString("user_photo", user.photo!);
       }
@@ -38,7 +33,6 @@ class ProfileService {
     return null;
   }
 
-  // 2. Upload Foto Baru
   static Future<String?> uploadPhoto(File image) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? token = prefs.getString("token");
@@ -56,13 +50,20 @@ class ProfileService {
     var result = jsonDecode(await response.stream.bytesToString());
 
     if (response.statusCode == 200) {
-      return result['photo_url']; // Ini tetap photo_url karena balasan dari Laravel
+      // 🔥 FIX DATA BASI: Simpan URL terbaru ke memori sesaat setelah diupload
+      String newPhotoUrl = result['photo_url'];
+      if (!newPhotoUrl.startsWith('http')) {
+        String storageBaseUrl = Api.baseUrl.replaceAll('/api', '/storage/');
+        newPhotoUrl = "$storageBaseUrl$newPhotoUrl";
+      }
+      await prefs.setString("user_photo", newPhotoUrl);
+
+      return newPhotoUrl;
     }
 
     throw Exception(result['message'] ?? "Gagal upload foto");
   }
 
-  // 3. Simpan Perubahan Teks
   static Future<void> updateProfile(
     String name,
     String phone,
@@ -79,6 +80,35 @@ class ProfileService {
 
     if (response.statusCode != 200) {
       throw Exception("Gagal menyimpan data.");
+    }
+  }
+
+  // =========================================================================
+  // 🔥 FITUR BARU: KIRIM OTP OTOMATIS TANPA MINTA EMAIL LAGI
+  // =========================================================================
+  static Future<String> sendOtpOtomatis() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+
+    // 1. Ambil email diam-diam dari memori HP
+    String? email = prefs.getString("user_email");
+
+    if (email == null || email.isEmpty) {
+      throw Exception("Data email tidak ditemukan. Silakan login ulang.");
+    }
+
+    // 2. Tembak API Laravel (Pastikan endpoint '/forgot-password' sesuai rute API Bos)
+    var response = await http.post(
+      Uri.parse("${Api.baseUrl}/forgot-password"),
+      headers: {"Accept": "application/json"},
+      body: {"email": email},
+    );
+
+    if (response.statusCode == 200) {
+      // 3. Kembalikan email tersebut agar UI bisa meneruskannya ke halaman OTP
+      return email;
+    } else {
+      var errorData = jsonDecode(response.body);
+      throw Exception(errorData['message'] ?? "Gagal mengirim kode OTP.");
     }
   }
 }

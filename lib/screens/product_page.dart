@@ -24,9 +24,15 @@ class _ProductPageState extends State<ProductPage> {
   }
 
   // --- FUNGSI MENGGUNAKAN ASISTEN ---
+  // --- FUNGSI MENGGUNAKAN ASISTEN ---
   Future<void> _loadProducts() async {
     try {
-      String barberId = widget.shopData['user_id'].toString();
+      // 🔥 PERBAIKAN: Gunakan "??" agar tidak null-crash!
+      // Jika 'user_id' ada, pakai itu. Jika tidak ada, pakai 'id' profil.
+      String barberId =
+          widget.shopData['user_id']?.toString() ??
+          widget.shopData['id'].toString();
+          
 
       // Panggil asisten untuk ambil data
       var data = await ProductService.fetchProductsByBarber(barberId);
@@ -40,10 +46,10 @@ class _ProductPageState extends State<ProductPage> {
     } catch (e) {
       if (mounted) {
         setState(() => isLoading = false);
-        // Tampilkan pesan error jika butuh
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Gagal memuat produk. Coba lagi nanti."),
+            backgroundColor: Colors.red,
           ),
         );
       }
